@@ -1,0 +1,60 @@
+# Synthetic instance for fmo_organs.mod. Numbers are illustrative only,
+# NOT clinical data. Used to check model wiring before running real cases.
+#
+# Layout: 2 PTV voxels, 3 OAR voxels. Organ 0 = Bladder (rows 0-1),
+# organ 1 = Rectum (row 2). Two beamlets.
+
+param n_ptv := 2;
+param n_oar := 3;
+param n_organs := 2;
+
+set DIMLETS := 0 1;
+
+param max_intensity := 100;
+param w_under := 1.0;
+param w_ptv_over := 0.3;
+
+param oar_organ :=
+    0 0
+    1 0
+    2 1;
+
+param w_over_organ :=
+    0 0.5
+    1 0.8;
+
+param dmin :=
+    0 70
+    1 70;
+
+param dmax :=
+    0 30
+    1 30
+    2 30;
+
+param dmax_ptv :=
+    0 74.9
+    1 74.9;
+
+set PTV_DOSE :=
+    (0,0) (0,1)
+    (1,0) (1,1);
+
+set OAR_DOSE :=
+    (0,0) (0,1)
+    (1,0) (1,1)
+    (2,0) (2,1);
+
+param d_ptv :=
+    0 0 1.0
+    0 1 0.8
+    1 0 0.9
+    1 1 1.0;
+
+param d_oar :=
+    0 0 0.7
+    0 1 0.1
+    1 0 0.7
+    1 1 0.1
+    2 0 0.1
+    2 1 0.6;

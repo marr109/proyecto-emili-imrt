@@ -1,0 +1,134 @@
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Vendored AMPL C++ API: one shared library per platform, both extracted from
+# the amplpy 0.18.0 wheel. These are dependencies, not build output, so they are
+# tracked despite the *.so / *.dylib rules above.
+!third_party/ampl_cppapi/lib/libampl.so
+!third_party/ampl_cppapi/lib/libampl.dylib
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+
+# CMAKE
+
+CMakeLists.txt.user
+CMakeCache.txt
+CMakeFiles
+CMakeScripts
+Testing
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps
+
+# OS generated files #
+######################
+.DS_Store?
+ehthumbs.db
+Icon?
+Thumbs.db
+*.DS_Store
+ 
+# Xcode
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.xcuserstate
+project.xcworkspace/
+xcuserdata/
+ 
+ 
+# IDE
+*.idea
+*.iml
+ 
+# Generated files
+/web-app/WEB-INF
+
+# SDD artifacts
+.atl/
+build/
+*.[oa]
+*.pyc
+
+# Instance data (large datasets distributed via GitHub Releases)
+/instances/
+
+# Compressed release archives (keep out of git)
+*.tar.gz
+*.zip
+ 
+# Other source repository archive directories (protects when importing)
+.hg
+.svn
+CVS
+ 
+# automatic backup files
+*~.nib
+*.swp
+*~
+*(Autosaved).rtfd/
+Backup[ ]of[ ]*.pages/
+Backup[ ]of[ ]*.key/
+Backup[ ]of[ ]*.numbers/
+
+
+# Logs and databases #
+*.log
+*.txt
+!benchmark/*.txt
+*.mat
+
+# AMPL/Gurobi exploration
+ampl_gurobi/.venv/
+*.lic
+!ampl_gurobi/*.mod
+# raw clinical/course data dumps, not project artifacts
+archivos_profe/
+x/
+
+# Raw experiment results are kept locally, not versioned. Commands and analysis notes
+# (experiments/new/*/COMMANDS.md, experiments/new/ANALYSIS_NOTES.md) stay tracked.
+/experiments/old/
+/experiments/archive_*/
+/experiments/new/*/nangshift*/
+/experiments/new/*/comparisons/
+/experiments/new/*/plans_dosimetry.csv*
+/experiments/new/vns/
+/experiments/new/comparisons/
+/ampl_gurobi/fi_cerr_results*.json
+/ampl_gurobi/pareto_*.json
+/ampl_gurobi/run_all*.sh
+__pycache__/
