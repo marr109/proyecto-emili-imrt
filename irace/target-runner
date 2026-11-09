@@ -1,4 +1,4 @@
-#!/Users/marrojasr/.venvs/emili-ampl/bin/python
+#!/usr/bin/env python3
 """irace target runner: builds the EMILI command from the parameters, runs it, prints f* (to minimize).
 
 Called by irace as: target-runner <candidate> <instance id> <seed> <instance> [--param value ...]

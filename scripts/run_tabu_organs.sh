@@ -18,7 +18,7 @@ export EMILI_MAX_INTENSITY="${EMILI_MAX_INTENSITY:-100}"
 
 BIN="${EMILI_BIN:-./build/emili}"
 BUDGET="${BUDGET_SECONDS:-1080}"
-PY="${PY:-$HOME/.venvs/emili-ampl/bin/python}"
+PY="${PY:-python3}"   # python of the environment with amplpy, numpy, scipy and matplotlib
 BASE="${OUT_ROOT:-experiments/new}/tabu/nangshift${STEP}/restricted"
 OUTBASE="${BASE}/data/${STRATEGY}"
 LOG="${BASE}/${STRATEGY}_batch.log"

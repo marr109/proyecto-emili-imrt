@@ -12,7 +12,7 @@ if [ $# -ne 1 ] || [ ! -d "$1" ]; then
   exit 1
 fi
 
-PY="${PY:-$HOME/.venvs/emili-ampl/bin/python}"
+PY="${PY:-python3}"   # python of the environment with amplpy, numpy, scipy and matplotlib
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 count=0

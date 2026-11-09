@@ -1,6 +1,6 @@
 """First-improvement local search over angle sets, exact FMO per neighbor (AMPL + Gurobi).
 Toy BAO: 4 candidate angles (1 beamlet each), K=2 active. Organs: bladder (OAR 0), rectum (OAR 1).
-Model: /Users/.../ampl_gurobi/fmo_organs.mod (per-organ w_over)."""
+Model: ampl_gurobi/fmo_organs.mod (per-organ w_over)."""
 import itertools
 from amplpy import AMPL
 

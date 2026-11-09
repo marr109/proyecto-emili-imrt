@@ -18,16 +18,17 @@ Loader options (environment variables, `cerr_fmo_ampl.py`):
 
 ## Local (macOS) Python environment
 
-Persistent venv outside the project and outside /tmp (macOS cleans old files in /tmp and broke the previous one):
-`~/.venvs/emili-ampl` (numpy, scipy, matplotlib, amplpy, ampl_module_base, ampl_module_gurobi).
+Use a persistent virtual environment outside the project and outside /tmp (macOS cleans old files in /tmp), with
+numpy, scipy, matplotlib, amplpy, ampl_module_base and ampl_module_gurobi installed. In the commands below `python` is
+the interpreter of that environment.
 
 ```bash
-~/.venvs/emili-ampl/bin/python dosimetry_batch.py <experiments_dir> --out <csv> --geud
-~/.venvs/emili-ampl/bin/python ../scripts/analyze_new_experiments.py
+python dosimetry_batch.py <experiments_dir> --out <csv> --geud
+python ../scripts/analyze_new_experiments.py
 ```
 
 The AMPL course license uses short-term leases. If a run fails with "Short term lease expired", renew it:
 
 ```bash
-cd ~/.venvs/emili-ampl/lib/python3.14/site-packages/ampl_module_base/bin && ./amplkey renew
+cd <venv>/lib/python3.X/site-packages/ampl_module_base/bin && ./amplkey renew
 ```

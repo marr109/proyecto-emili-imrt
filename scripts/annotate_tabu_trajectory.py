@@ -7,7 +7,7 @@ Estas columnas NO las escribe el binario -- son derivadas, reconstruidas por
 este script a partir de los valores ya evaluados en el CSV, replicando la
 misma secuencia de decisiones (bestSoFar/incumbent/tabu_check/forbid/resize)
 que el algoritmo real. Verificado contra la salida real ("Found solution")
-de varias semillas antes de usarse (ver docs/analisis-tabu-adaptativo.md).
+de varias semillas antes de usarse.
 
 Uso: python3 scripts/annotate_tabu_trajectory.py <trajectory.csv> <first|best> [--out OUT.csv]
 """
