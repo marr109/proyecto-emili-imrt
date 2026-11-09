@@ -1,0 +1,95 @@
+#!/Users/marrojasr/.venvs/emili-ampl/bin/python
+"""irace target runner: builds the EMILI command from the parameters, runs it, prints f* (to minimize).
+
+Called by irace as: target-runner <candidate> <instance id> <seed> <instance> [--param value ...]
+Environment: EMILI_ROOT (repo root), IRACE_RUN_SECONDS (wall-clock budget per run, default 1080).
+"""
+import os
+import re
+import subprocess
+import sys
+import tempfile
+
+ROOT = os.environ.get("EMILI_ROOT", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+BUDGET = int(os.environ.get("IRACE_RUN_SECONDS", "1080"))
+cand, inst_id, seed, instance = sys.argv[1:5]
+P = {}
+args = sys.argv[5:]
+for i in range(0, len(args), 2):
+    P[args[i].lstrip("-")] = args[i + 1]
+
+NB = {"shift10": "nangshift 10", "shift5": "nangshift 5", "sample": "nangswapsample %s",
+      "window": "nangswapwindow %s", "flip": "nangflip 0"}
+
+
+def neighbourhoods():
+    out = []
+    for k in ("nb1", "nb2", "nb3"):
+        v = P.get(k, "none")
+        if v == "none":
+            continue
+        t = NB[v]
+        out.append(t % P["sample_size"] if v == "sample" else t % (5 * int(P["window_deg"])) if v == "window" else t)
+    return " ".join(out)
+
+
+def perturbation():
+    p, step = P["pert"], P.get("step", "10")
+    sw = " stepwise" if P.get("stepwise") == "yes" else ""
+    if p == "shift":
+        return "prangshift %s %s" % (step, P["pert_angles"])
+    if p == "adaptive":
+        return "prangshiftadaptive %s %s %s" % (step, P["mag_angles"], P["stagnation"])
+    if p == "mag":
+        return "prangshiftmag %s 2 5 10%s" % (P["mag_angles"], sw)
+    return "prangshiftadaptivemag %s %s 2 5 10%s" % (P["mag_angles"], P["stagnation"], sw)
+
+
+def shift():
+    return "nangshift %s" % P["step"]
+
+
+def order():
+    o = P.get("scan_order", "fixed")
+    return "" if o == "fixed" else o
+
+
+alg = P["algorithm"]
+if alg == "ls":
+    cmd = "%s irandomk locmin %s %s" % (P["strategy"], shift(), order())
+elif alg == "ils":
+    cmd = "ils %s irandomk locmin %s %s tmaxiter 1000000 %s baoimprove rejectrepeated" % (
+        P["strategy"], shift(), order(), perturbation())
+elif alg == "sa":
+    cool = ("sa_metropolis %s %s %s" % (P["t_start"], P["t_end"], P["beta"]) if P["sa_kind"] == "metropolis"
+            else "saacc %s %s 0 1 %s" % (P["t_start"], P["t_end"], P["alpha"]))
+    cmd = "sa irandomk tmaxiter 1000000 %s %s" % (shift(), cool)
+elif alg == "vnd":
+    cmd = "vnd first irandomk locmin %s" % neighbourhoods()
+elif alg == "tabu":
+    cmd = "tabubao %s irandomk tmaxiter 1000000 %s TBao_adaptive %s %s" % (
+        P["strategy"], shift(), P["tenure_min"], P["tenure_max"])
+else:
+    search = ("first irandomk locmin %s" % shift() if P["vns_search"] == "shift"
+              else "vnd first irandomk locmin %s" % neighbourhoods())
+    shake = ("bangshake %s" % P["shake_levels"] if P["shake"] == "bangshake"
+             else "pershake %s" % perturbation())
+    cmd = "vns %s tmaxiter 1000000 %s accng baoimprove rejectrepeated" % (search, shake)
+
+env = dict(os.environ, EMILI_FMO_MODEL="organs", EMILI_W_OVER_ORGANS="0.5,0.8", EMILI_DMIN="68",
+           EMILI_W_PTV_OVER="0.5", EMILI_EXCLUDE_OVERLAP="1", EMILI_MAX_INTENSITY="100")
+# -it must come BEFORE rnds
+with tempfile.TemporaryDirectory(prefix="irace_bao_") as tmp:
+    argv = [os.path.join(ROOT, "build", "emili"), os.path.join(ROOT, "instances", instance), "baoimrt", "4",
+            "csv", os.path.join(tmp, "trajectory.csv")] + cmd.split() + ["-it", str(BUDGET), "rnds", str(int(seed) % 1000000 + 1)]
+    try:
+        p = subprocess.run(argv, env=env, cwd=ROOT, capture_output=True, text=True, timeout=BUDGET + 600)
+    except subprocess.TimeoutExpired:
+        print("Infinity")
+        sys.exit(0)
+    out = p.stdout + p.stderr
+    m = re.findall(r"FMO objective f\*\s*:\s*([-+0-9.eE]+)", out)
+    if not m:
+        sys.stderr.write("no f* for: %s\n%s\n" % (" ".join(argv), out[-500:]))
+        sys.exit(1)
+    print(m[-1])

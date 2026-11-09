@@ -1,0 +1,14 @@
+# irace scenario: algorithm selection and tuning for BAO (K=4, CERR_Prostate, per-organ FMO model).
+# Each experiment is one EMILI run of IRACE_RUN_SECONDS (default 1080 s = 18 min).
+# Paths are relative to this folder: run irace from here.
+targetRunner       = "./target-runner"
+trainInstancesFile = "./instances.txt"
+parameterFile      = "./parameters.irace"
+logFile            = "./results/irace.Rdata"
+maxExperiments     = 300
+parallel           = 12
+seed               = 42
+firstTest          = 3
+nbIterations       = 3
+eachTest           = 1
+debugLevel         = 1
