@@ -1,4 +1,4 @@
-# EMILI IMRT — Beam Angle & Fluence Map Optimization
+# EMILI IMRT — Optimización de Ángulos de Haz y Mapas de Fluencia
 
 <p align="center">
   <pre>
@@ -11,74 +11,74 @@
   </pre>
 </p>
 
-**EMILI** (*Easily Modifiable Iterated Local search Implementation*) is an extensible C++ metaheuristic framework for combinatorial optimization, extended here with an **IMRT treatment planning module** that solves the coupled **Beam Angle Optimization (BAO)** and **Fluence Map Optimization (FMO)** problem using AMPL + Gurobi and iterated local search.
+**EMILI** (*Easily Modifiable Iterated Local search Implementation*) es un framework metaheurístico extensible en C++ para optimización combinatoria, extendido aquí con un **módulo de planificación de tratamientos IMRT** que resuelve el problema acoplado de **Optimización de Ángulos de Haz (BAO)** y **Optimización de Mapas de Fluencia (FMO)** mediante AMPL + Gurobi y búsqueda local iterada.
 
 ---
 
-## Table of Contents
+## Tabla de Contenidos
 
-- [Architecture](#architecture)
-- [IMRT Problem Formulation](#imrt-problem-formulation)
-- [Quick Start](#quick-start)
-- [Command-Line Usage](#command-line-usage)
-- [Hyperparameter Tuning (irace)](#hyperparameter-tuning-irace)
-- [Clinical Report (ICRU-83)](#clinical-report-icru-83)
-- [Algorithm Competition](#algorithm-competition)
-- [Project Structure](#project-structure)
-- [Build Options](#build-options)
-- [Contributing](#contributing)
-- [License & Credits](#license--credits)
+- [Arquitectura](#arquitectura)
+- [Formulación del Problema IMRT](#formulación-del-problema-imrt)
+- [Inicio Rápido](#inicio-rápido)
+- [Uso de la Línea de Comandos](#uso-de-la-línea-de-comandos)
+- [Ajuste de Hiperparámetros (irace)](#ajuste-de-hiperparámetros-irace)
+- [Informe Clínico (ICRU-83)](#informe-clínico-icru-83)
+- [Competencia de Algoritmos](#competencia-de-algoritmos)
+- [Estructura del Proyecto](#estructura-del-proyecto)
+- [Opciones de Compilación](#opciones-de-compilación)
+- [Contribución](#contribución)
+- [Licencia y Créditos](#licencia-y-créditos)
 
 ---
 
-## Architecture
+## Arquitectura
 
-The codebase follows a **framework + extension** pattern. The core EMILI library provides abstract metaheuristic building blocks; the `imrt/` directory extends them for radiation therapy.
+El código sigue un patrón de **framework + extensión**. La biblioteca núcleo de EMILI provee bloques metaheurísticos abstractos; el directorio `imrt/` los extiende para radioterapia.
 
 ```
 ┌──────────────────────────────────────────────────┐
-│  FRAMEWORK CORE  (emilibase.h/.cpp)              │
+│  NÚCLEO DEL FRAMEWORK  (emilibase.h/.cpp)        │
 │  Problem · Solution · InitialSolution            │
 │  Neighborhood · Perturbation · Acceptance        │
 │  Termination · LocalSearch · TabuMemory          │
 ├──────────────────────────────────────────────────┤
 │  PARSER / BUILDER  (generalParser.h/.cpp)        │
-│  CLI grammar → algorithm composition at runtime  │
+│  Gramática CLI → composición en ejecución        │
 ├──────────────────────────────────────────────────┤
-│  IMRT MODULE  (imrt/)                            │
+│  MÓDULO IMRT  (imrt/)                            │
 │  CerrFmoSource · ImrtProblem · ImrtFmoSolver     │
 │  BaoProblem · AngleSwapNeighborhood              │
 │  RandomAnglesPerturbation · GreedyAngles...      │
 └──────────────────────────────────────────────────┘
 ```
 
-### Metaheuristics available out of the box
+### Metaheurísticas disponibles de fábrica
 
-| Algorithm | Token | Internal LS | Special components |
+| Algoritmo | Token | BL interna | Componentes especiales |
 |---|---|---|---|
-| Iterated Local Search | `ils` | Best/First improvement | `prangswap`, `improve` |
-| Variable Neighborhood Search | `vns` | Best/First improvement | `bangshake`, `accng` |
-| Tabu Search (BAO) | `tabubao` | none (own loop, neighbours from the current solution) | `TBao_fixed`, `TBao_adaptive`, `TBao_attr` |
-| Variable Neighborhood Descent | `vnd` | list of neighborhoods | `nangshift`, `nangswapsample`, `nangswapwindow`, `nangflip` |
-| Iterated Greedy | `ils` + `pgreedy` / `pgreedysample` | Best/First improvement | destruction-reconstruction (sampled variant) |
-| Simulated Annealing | `ils nols` + `saacc` | Empty (Metropolis accept) | `saacc s e β i α` |
+| Búsqueda Local Iterada | `ils` | Mejor/Primera mejora | `prangswap`, `improve` |
+| Búsqueda de Vecindario Variable | `vns` | Mejor/Primera mejora | `bangshake`, `accng` |
+| Búsqueda Tabú (BAO) | `tabubao` | ninguna (ciclo propio, vecinos a partir de la solución actual) | `TBao_fixed`, `TBao_adaptive`, `TBao_attr` |
+| Descenso de Vecindario Variable | `vnd` | lista de vecindarios | `nangshift`, `nangswapsample`, `nangswapwindow`, `nangflip` |
+| Greedy Iterado | `ils` + `pgreedy` / `pgreedysample` | Mejor/Primera mejora | destrucción-reconstrucción (variante con muestreo) |
+| Recocido Simulado | `ils nols` + `saacc` | Vacía (aceptación de Metropolis) | `saacc s e β i α` |
 
-*All algorithms are composed at runtime via CLI tokens — no recompilation needed.*
+*Todos los algoritmos se componen en tiempo de ejecución mediante tokens de la CLI, sin necesidad de recompilar.*
 
 ---
 
-## IMRT Problem Formulation
+## Formulación del Problema IMRT
 
-### Clinical context
+### Contexto clínico
 
-Intensity-Modulated Radiation Therapy delivers conformal dose to a Planning Target Volume (PTV) while sparing Organs at Risk (OARs). The problem has two coupled sub-problems:
+La Radioterapia de Intensidad Modulada entrega una dosis conformada a un Volumen Blanco de Planificación (PTV) mientras protege los Órganos en Riesgo (OAR). El problema consta de dos subproblemas acoplados:
 
-1. **BAO (Beam Angle Optimization)** — select *K* gantry angles from *N* candidates
-2. **FMO (Fluence Map Optimization)** — compute optimal beamlet intensities for the chosen angles
+1. **BAO (Optimización de Ángulos de Haz)** — seleccionar *K* ángulos del gantry entre *N* candidatos
+2. **FMO (Optimización de Mapas de Fluencia)** — calcular las intensidades óptimas de los beamlets para los ángulos elegidos
 
-### Quadratic penalty objective (FMO)
+### Objetivo de penalización cuadrática (FMO)
 
-The FMO sub-problem is solved **exactly** via AMPL + Gurobi:
+El subproblema FMO se resuelve de forma **exacta** mediante AMPL + Gurobi:
 
 ```
 min  w_under · Σ || u_b ||²  +  w_over · Σ || v_b ||²  +  w_ptv_over · Σ || w_b ||²
@@ -89,27 +89,27 @@ s.t. D_ptv·x + u ≥ Dmin            (PTV underdose slack)
      0 ≤ x_j ≤ max_intensity
 ```
 
-| Weight | Controls | Clinical effect of increasing |
+| Peso | Controla | Efecto clínico al aumentarlo |
 |---|---|---|
-| `w_under` | PTV underdose penalty | ↑ forces V95% coverage |
-| `w_over` | OAR overdose penalty | ↑ protects healthy organs |
-| `w_ptv_over` | PTV hot-spot penalty | ↓ reduces D2 / improves homogeneity |
+| `w_under` | Penalización de subdosis en el PTV | ↑ fuerza la cobertura V95% |
+| `w_over` | Penalización de sobredosis en OAR | ↑ protege los órganos sanos |
+| `w_ptv_over` | Penalización de punto caliente en el PTV | ↓ reduce D2 / mejora la homogeneidad |
 
-### Sparse dose matrix
+### Matriz de dosis dispersa
 
-Dose deposition data is read from the raw **CERR export layout** (`instances/CERR_Prostate`) via `CerrFmoSource` — one voxel list per organ plus per-angle dose files, with beamlet counts read per angle instead of assumed uniform. The FMO solver assembles a **compact QP** using only the *K* active angles' beamlets, keeping the problem size O(K) regardless of candidate pool size.
+Los datos de deposición de dosis se leen desde el **formato de exportación CERR** sin procesar (`instances/CERR_Prostate`) mediante `CerrFmoSource`: una lista de vóxeles por órgano más archivos de dosis por ángulo, leyendo la cantidad de beamlets por ángulo en lugar de suponerla uniforme. El solver FMO ensambla un **QP compacto** usando únicamente los beamlets de los *K* ángulos activos, lo que mantiene el tamaño del problema en O(K) independientemente del tamaño del conjunto de ángulos candidatos.
 
 ---
 
-## Quick Start
+## Inicio Rápido
 
-### Prerequisites
+### Prerrequisitos
 
-- C++11 compiler (gcc ≥ 4.7 or Clang)
+- Compilador C++11 (gcc ≥ 4.7 o Clang)
 - CMake ≥ 2.8
-- AMPL + Gurobi, installed locally via `ampl_gurobi/.venv` (see `ampl_gurobi/` for setup — the AMPL C++ API itself is vendored under `third_party/ampl_cppapi/`, no separate install needed for that part)
+- AMPL + Gurobi, instalados localmente mediante `ampl_gurobi/.venv` (véase `ampl_gurobi/` para la configuración; la API C++ de AMPL se incluye integrada en `third_party/ampl_cppapi/`, por lo que no requiere una instalación separada para esa parte)
 
-### Build
+### Compilación
 
 ```bash
 mkdir build && cd build
@@ -117,23 +117,23 @@ cmake ..
 make -j$(nproc)
 ```
 
-The FMO solver (`imrt/imrt_fmo.cpp`) resolves the AMPL binary and Gurobi
-driver at runtime via `EMILI_AMPL_BIN_DIR`/`EMILI_GUROBI_BIN` (defaulting to
-the paths inside `ampl_gurobi/.venv`) — if that venv isn't set up, `baoimrt`
-and `imrt` will still build and run, but every FMO solve will fail loudly
-and return a worst-case objective instead of a real result.
+El solver FMO (`imrt/imrt_fmo.cpp`) resuelve el binario de AMPL y el controlador de Gurobi
+en tiempo de ejecución mediante `EMILI_AMPL_BIN_DIR`/`EMILI_GUROBI_BIN` (por defecto, las
+rutas dentro de `ampl_gurobi/.venv`). Si ese entorno virtual no está configurado, `baoimrt`
+e `imrt` se compilarán y ejecutarán igualmente, pero cada resolución de FMO fallará de forma explícita
+y devolverá un valor objetivo de peor caso en lugar de un resultado real.
 
-The binary is `build/emili`.
+El binario es `build/emili`.
 
 ---
 
-## Command-Line Usage
+## Uso de la Línea de Comandos
 
 ```bash
 ./build/emili <instance_dir> <problem> <algorithm_description> [options]
 ```
 
-### BAO+FMO (K=4 angles, ILS with first improvement)
+### BAO+FMO (K=4 ángulos, ILS con primera mejora)
 
 ```bash
 ./build/emili instances/PROSTATE_36ang baoimrt 4 \
@@ -142,7 +142,7 @@ The binary is `build/emili`.
     rnds 42
 ```
 
-### FMO-only (all angles, single-beamlet-shift neighborhood)
+### Solo FMO (todos los ángulos, vecindario de desplazamiento de un único beamlet)
 
 ```bash
 ./build/emili instances/TINY_test imrt 36 \
@@ -150,54 +150,56 @@ The binary is `build/emili`.
     rnds 42
 ```
 
-### Algorithm tokens quick reference
+### Referencia rápida de tokens de algoritmo
 
-| Category | Token | Meaning |
+| Categoría | Token | Significado |
 |---|---|---|
-| Problem | `imrt <dir> [nactive K] [verbose]` | FMO on all angles |
-| Problem | `baoimrt <K> <dir> [verbose]` | BAO+FMO |
-| Init | `izero` / `iuniform X` / `irandom M` | FMO initial intensities |
-| Init | `ifirstk` / `irandomk` | BAO initial angle set |
-| Neighborhood | `nshift Δ` / `nswap` | FMO beamlet moves |
-| Neighborhood | `nangswap` | BAO angle swap |
-| Perturbation | `prangswap P` / `pgreedy D` | BAO perturbations |
-| Acceptance | `improve` / `saacc s e β i α` | Accept criterion |
-| Termination | `tmaxiter N` / `tfeasible` | Stop condition |
+| Problema | `imrt <dir> [nactive K] [verbose]` | FMO sobre todos los ángulos |
+| Problema | `baoimrt <K> <dir> [verbose]` | BAO+FMO |
+| Inicialización | `izero` / `iuniform X` / `irandom M` | Intensidades iniciales de FMO |
+| Inicialización | `ifirstk` / `irandomk` | Conjunto inicial de ángulos de BAO |
+| Vecindario | `nshift Δ` / `nswap` | Movimientos de beamlets de FMO |
+| Vecindario | `nangswap` | Intercambio de ángulos de BAO |
+| Perturbación | `prangswap P` / `pgreedy D` | Perturbaciones de BAO |
+| Aceptación | `improve` / `saacc s e β i α` | Criterio de aceptación |
+| Terminación | `tmaxiter N` / `tfeasible` | Condición de parada |
 
 ---
 
-### BAO token reference
+### Referencia de tokens de BAO
 
-Neighborhoods (all change one angle of the K active angles):
+Para una guía completa de uso de los tokens y de cómo agregar un modelo FMO distinto, ver [docs/GUIA_MODELOS_Y_TOKENS.md](docs/GUIA_MODELOS_Y_TOKENS.md).
 
-| Token | Neighbours | Notes |
+Vecindarios (todos modifican uno de los K ángulos activos):
+
+| Token | Vecinos | Notas |
 |---|---|---|
-| `nangshift <step> [fixed\|circular\|randorder]` | 2K (angle -step, +step) | step in degrees (1, 5, 10, 20); the scan order only matters for first improvement, default `fixed` |
-| `nangswap` | K x (catalog - K) | full swap, expensive (272 neighbours with the 5-degree catalog) |
-| `nangswapsample <n> [unrestricted]` | n sampled swaps | a plan with no improving sample is only probably a local optimum |
-| `nangswapwindow <deg> [unrestricted]` | swaps within +-deg of the removed angle | |
-| `nangflip 0` | at most K (angle +180) | |
+| `nangshift <step> [fixed\|circular\|randorder]` | 2K (ángulo -step, +step) | step en grados (1, 5, 10, 20); el orden de exploración solo importa para la primera mejora, por defecto `fixed` |
+| `nangswap` | K x (catálogo - K) | intercambio completo, costoso (272 vecinos con el catálogo de 5 grados) |
+| `nangswapsample <n> [unrestricted]` | n intercambios muestreados | un plan sin muestras que mejoren solo es probablemente un óptimo local |
+| `nangswapwindow <deg> [unrestricted]` | intercambios dentro de +-deg del ángulo removido | |
+| `nangflip 0` | como máximo K (ángulo +180) | |
 
-Perturbations (ILS and the `pershake` shake of the general VNS):
+Perturbaciones (ILS y la sacudida `pershake` del VNS general):
 
-| Token | Meaning |
+| Token | Significado |
 |---|---|
-| `prangshift <step> <n> [stepwise] [distinct\|replace]` | shifts n angles by a random magnitude in (step, 2 step); `distinct` (default) moves n different angles, `replace` draws the slot of each move independently, so an angle can move more than once; `stepwise` evaluates after every individual move |
-| `prangshiftadaptive <step> <max> <stagnation> [distinct\|replace]` | starts at 1 angle and adds one per `stagnation` rounds without improvement |
-| `prangshiftmag` / `prangshiftadaptivemag` | same, with discrete magnitudes |
-| `pgreedy <D>` / `pgreedysample <D> <sample>` | destroy D angles and rebuild greedily (the sampled variant evaluates `sample` candidates per empty slot) |
+| `prangshift <step> <n> [stepwise] [distinct\|replace]` | desplaza n ángulos en una magnitud aleatoria en (step, 2 step); `distinct` (por defecto) mueve n ángulos diferentes, `replace` sortea la posición de cada movimiento de forma independiente, de modo que un ángulo puede moverse más de una vez; `stepwise` evalúa después de cada movimiento individual |
+| `prangshiftadaptive <step> <max> <stagnation> [distinct\|replace]` | comienza con 1 ángulo y agrega uno por cada `stagnation` rondas sin mejora |
+| `prangshiftmag` / `prangshiftadaptivemag` | igual, con magnitudes discretas |
+| `pgreedy <D>` / `pgreedysample <D> <sample>` | destruye D ángulos y reconstruye de forma voraz (la variante con muestreo evalúa `sample` candidatos por cada posición vacía) |
 
-Tabu search:
+Búsqueda tabú:
 
 ```
 tabubao [first|best] [stall <n>] irandomk tmaxiter <N> nangshift <step> <memory>
 ```
 
-- `first|best` is optional (default `best`, the textbook strategy); `stall` stops after n iterations without a new FMO solve (default 100).
-- Memories: `TBao_fixed <tenure>` and `TBao_adaptive <min> <max>` forbid whole angle sets already visited; `TBao_attr <tenure>` forbids re-inserting any of the last `tenure` angles that left the plan.
-- Debug output: `EMILI_TABU_LOG=<file>` writes one csv row per tabu event (start, move, tabu_skip) with the banned list before and after; `EMILI_PERT_TRACE=1` prints the slot and angle change of every perturbation move.
+- `first|best` es opcional (por defecto `best`, la estrategia de los textos clásicos); `stall` detiene la búsqueda tras n iteraciones sin una nueva resolución de FMO (por defecto 100).
+- Memorias: `TBao_fixed <tenure>` y `TBao_adaptive <min> <max>` prohíben conjuntos de ángulos completos ya visitados; `TBao_attr <tenure>` prohíbe reinsertar cualquiera de los últimos `tenure` ángulos que salieron del plan.
+- Salida de depuración: `EMILI_TABU_LOG=<file>` escribe una fila csv por evento tabú (start, move, tabu_skip) con la lista de prohibidos antes y después; `EMILI_PERT_TRACE=1` imprime la posición y el cambio de ángulo de cada movimiento de perturbación.
 
-Example:
+Ejemplo:
 
 ```bash
 ./build/emili instances/CERR_Prostate baoimrt 4 csv trajectory.csv \
@@ -205,54 +207,54 @@ Example:
     -it 1080 rnds 1
 ```
 
-`-it <seconds>` must come before `rnds`. The XML grammar `grammars/imrt_bao.xml` generates these command lines for automatic configuration; `scripts/check_irace_params.py` checks it against the irace parameter space and `scripts/sample_grammar.py` prints random samples.
+`-it <seconds>` debe ir antes de `rnds`. La gramática XML `grammars/imrt_bao.xml` genera estas líneas de comandos para la configuración automática; `scripts/check_irace_params.py` la verifica contra el espacio de parámetros de irace y `scripts/sample_grammar.py` imprime muestras aleatorias.
 
 ---
 
-## Per-organ FMO model and experiment variables
+## Modelo de FMO por órgano y variables de experimento
 
-The default FMO model is `ampl_gurobi/fmo.mod` (one overdose weight for all organs at risk). The per-organ model
-`ampl_gurobi/fmo_organs.mod` gives each organ its own weight. It is selected at run time, without recompiling:
+El modelo de FMO por defecto es `ampl_gurobi/fmo.mod` (un único peso de sobredosis para todos los órganos en riesgo). El modelo por órgano
+`ampl_gurobi/fmo_organs.mod` asigna a cada órgano su propio peso. Se selecciona en tiempo de ejecución, sin recompilar:
 
-| Variable | Default | Meaning |
+| Variable | Por defecto | Significado |
 |---|---|---|
-| `EMILI_FMO_MODEL` | `baseline` | `baseline` reads `fmo.mod`; `organs` reads `fmo_organs.mod` |
-| `EMILI_W_OVER_ORGANS` | `w_over` for every organ | Overdose weights, comma separated, in the order of the organs at risk (e.g. `0.5,0.8`) |
-| `EMILI_FMO_NORMALIZE` | `0` | `1` divides each term by the number of voxels of its structure |
-| `EMILI_DMIN` | `65` | PTV prescription in Gy (the PTV ceiling is 1.07 x this value) |
-| `EMILI_W_PTV_OVER` | `0` | Weight of the PTV hot-spot penalty |
-| `EMILI_EXCLUDE_OVERLAP` | `0` | `1` counts voxels shared by a PTV and an organ only as PTV |
-| `EMILI_MAX_INTENSITY` | `15000` | Upper bound of each beamlet intensity |
-| `EMILI_GUROBI_OPTIONS` | empty | Passed to the solver, e.g. `threads=1` |
-| `EMILI_AMPL_BIN_DIR`, `EMILI_GUROBI_BIN` | repo `.venv` path | AMPL and solver binaries (needed on Linux) |
+| `EMILI_FMO_MODEL` | `baseline` | `baseline` lee `fmo.mod`; `organs` lee `fmo_organs.mod` |
+| `EMILI_W_OVER_ORGANS` | `w_over` para cada órgano | Pesos de sobredosis, separados por comas, en el orden de los órganos en riesgo (p. ej., `0.5,0.8`) |
+| `EMILI_FMO_NORMALIZE` | `0` | `1` divide cada término por el número de vóxeles de su estructura |
+| `EMILI_DMIN` | `65` | Prescripción del PTV en Gy (el techo del PTV es 1.07 x este valor) |
+| `EMILI_W_PTV_OVER` | `0` | Peso de la penalización de punto caliente en el PTV |
+| `EMILI_EXCLUDE_OVERLAP` | `0` | `1` cuenta los vóxeles compartidos por un PTV y un órgano solo como PTV |
+| `EMILI_MAX_INTENSITY` | `15000` | Cota superior de la intensidad de cada beamlet |
+| `EMILI_GUROBI_OPTIONS` | vacío | Se pasan al solver, p. ej., `threads=1` |
+| `EMILI_AMPL_BIN_DIR`, `EMILI_GUROBI_BIN` | ruta del `.venv` del repositorio | Binarios de AMPL y del solver (necesarios en Linux) |
 
-Defaults reproduce the original behaviour. The runners in `scripts/` set the per-organ variables used in the experiments
-(for example `scripts/run_catalog_job.sh`). The solver license is not part of the repository (`*.lic` is ignored);
-see `ampl_gurobi/README.md`.
+Los valores por defecto reproducen el comportamiento original. Los ejecutores en `scripts/` establecen las variables por órgano utilizadas en los experimentos
+(por ejemplo, `scripts/run_catalog_job.sh`). La licencia del solver no forma parte del repositorio (`*.lic` se ignora);
+véase `ampl_gurobi/README.md`.
 
-## Hyperparameter Tuning (irace)
+## Ajuste de Hiperparámetros (irace)
 
-`irace/` holds the [irace](https://iridia.ulb.ac.be/irace/) setup used to configure the BAO metaheuristics:
+`irace/` contiene la configuración de [irace](https://iridia.ulb.ac.be/irace/) utilizada para configurar las metaheurísticas de BAO:
 
-| File | Content |
+| Archivo | Contenido |
 |---|---|
-| `irace/parameters.irace` | parameter space: algorithm, strategy, step, scan order, neighbourhoods, perturbations, tabu tenures, cooling |
-| `irace/scenario.irace` | budget and instances |
-| `irace/target-runner` | builds the EMILI command line from the sampled parameters and returns the objective |
-| `irace/results/irace.Rdata` | final result of the executed run |
+| `irace/parameters.irace` | espacio de parámetros: algoritmo, estrategia, paso, orden de exploración, vecindarios, perturbaciones, tenencias tabú, enfriamiento |
+| `irace/scenario.irace` | presupuesto e instancias |
+| `irace/target-runner` | construye la línea de comandos de EMILI a partir de los parámetros muestreados y devuelve el objetivo |
+| `irace/results/irace.Rdata` | resultado final de la ejecución realizada |
 
 ```bash
 irace --scenario irace/scenario.irace
 ```
 
-The grammar `grammars/imrt_bao.xml` is a superset of this space (steps 1 and 20, `replace` slots); the differences are
-documented in `scripts/check_irace_params.py`.
+La gramática `grammars/imrt_bao.xml` es un superconjunto de este espacio (pasos 1 y 20, posiciones `replace`); las diferencias están
+documentadas en `scripts/check_irace_params.py`.
 
 ---
 
-## Clinical Report (ICRU-83)
+## Informe Clínico (ICRU-83)
 
-Every BAO+FMO run outputs a clinical plan summary:
+Cada ejecución de BAO+FMO produce un resumen clínico del plan:
 
 ```
 ================================================================
@@ -288,116 +290,116 @@ Homogeneity Index   HI (D2 - D98)/D_Rx   = 0.229
 PTV coverage        V95% of Rx           = 71.85 %
 ```
 
-A **DVH CSV** is also generated (`dvh.csv`). The search trajectory of a run (`csv <file>` option) can be plotted with `scripts/plot_trajectory.py`.
+También se genera un **CSV de DVH** (`dvh.csv`). La trayectoria de búsqueda de una ejecución (opción `csv <file>`) puede graficarse con `scripts/plot_trajectory.py`.
 
-### Plan quality metrics
+### Métricas de calidad del plan
 
-| Metric | Definition | Target |
+| Métrica | Definición | Objetivo |
 |---|---|---|
-| **V95%** | % PTV volume receiving ≥ 95% Rx | ≥ 95% |
-| **CI** | Conformity Index: V_Rx / V_PTV | → 1.0 |
-| **HI** | Homogeneity Index: (D2 − D98) / Rx | → 0 |
-| **D95** | Dose to 95% of PTV | ≥ 0.95·Rx |
-| **D2** | Near-max dose (2% volume) | ≤ 1.07·Rx |
+| **V95%** | % del volumen del PTV que recibe ≥ 95% de Rx | ≥ 95% |
+| **CI** | Índice de Conformidad: V_Rx / V_PTV | → 1.0 |
+| **HI** | Índice de Homogeneidad: (D2 − D98) / Rx | → 0 |
+| **D95** | Dosis al 95% del PTV | ≥ 0.95·Rx |
+| **D2** | Dosis casi máxima (2% del volumen) | ≤ 1.07·Rx |
 
 ---
 
-## Algorithm Competition
+## Competencia de Algoritmos
 
-`run_comparison.sh` benchmarks multiple algorithms with identical seeds:
+`run_comparison.sh` evalúa comparativamente múltiples algoritmos con semillas idénticas:
 
 ```bash
 ./run_comparison.sh
 ```
 
-Output per algorithm in `comparison_results/`:
+Salida por algoritmo en `comparison_results/`:
 
-| Algorithm | Log file | Key components |
+| Algoritmo | Archivo de registro | Componentes clave |
 |---|---|---|
-| ILS | `ILS.log` | ILS + random init + 2-swap perturbation |
-| Tabu | `Tabu.log` | Tabu with BAO angle-set memory |
-| VNS | `VNS.log` | rVNS with multi-scale shake |
-| SA | `SA.log` | ILS + Metropolis cooling |
-| Greedy | `Greedy.log` | ILS + destruction-reconstruction |
+| ILS | `ILS.log` | ILS + inicialización aleatoria + perturbación de 2 intercambios |
+| Tabú | `Tabu.log` | Tabú con memoria de conjuntos de ángulos de BAO |
+| VNS | `VNS.log` | rVNS con sacudida multiescala |
+| SA | `SA.log` | ILS + enfriamiento de Metropolis |
+| Greedy | `Greedy.log` | ILS + destrucción-reconstrucción |
 
-Trajectory and comparison plots are in `scripts/` (`plot_trajectory.py`, `plot_aggregate_comparison.py`, `plot_boxplot_comparison.py`).
+Los gráficos de trayectoria y de comparación se encuentran en `scripts/` (`plot_trajectory.py`, `plot_aggregate_comparison.py`, `plot_boxplot_comparison.py`).
 
-Per-seed analysis of the tabu runs: `scripts/tabu_replay_events.py` rebuilds the tabu-list events from each `trajectory.csv`
-(validating the replay against the logged evaluations) and `scripts/tabu_seed_convergence_csv.py` writes `convergence.csv`
-(best objective so far against real FMO solves).
+Análisis por semilla de las ejecuciones de tabú: `scripts/tabu_replay_events.py` reconstruye los eventos de la lista tabú a partir de cada `trajectory.csv`
+(validando la reproducción contra las evaluaciones registradas) y `scripts/tabu_seed_convergence_csv.py` escribe `convergence.csv`
+(mejor objetivo hasta el momento frente a resoluciones reales de FMO).
 
 ---
 
-## Project Structure
+## Estructura del Proyecto
 
 ```
 emili_imrt/
-├── main.cpp                   # Entry point
-├── emilibase.h/.cpp           # Core framework (Problem, Solution, LS, ILS, VNS, Tabu...)
-├── generalParser.h/.cpp       # CLI token parser + Builder pattern
-├── setup.h                    # Compile-time flags
-├── CMakeLists.txt             # Build system
+├── main.cpp                   # Punto de entrada
+├── emilibase.h/.cpp           # Framework núcleo (Problem, Solution, LS, ILS, VNS, Tabu...)
+├── generalParser.h/.cpp       # Parser de tokens de la CLI + patrón Builder
+├── setup.h                    # Banderas de tiempo de compilación
+├── CMakeLists.txt             # Sistema de compilación
 │
-├── imrt/                      # IMRT extension module
-│   ├── cerr_instance.h/.cpp   # CerrFmoSource: raw CERR export loader
-│   ├── imrt_fmo_source.h/.cpp # IFmoDataSource interface shared by FMO/BAO
-│   ├── imrt.h/.cpp            # FMO: ImrtProblem, beamlet neighborhoods
-│   ├── imrt_fmo.h/.cpp        # AMPL+Gurobi FMO solver
-│   ├── imrt_bao.h/.cpp        # BAO: angle neighborhoods, perturbations
-│   └── imrt_builder.h/.cpp    # CLI builder for IMRT tokens
+├── imrt/                      # Módulo de extensión IMRT
+│   ├── cerr_instance.h/.cpp   # CerrFmoSource: cargador de exportaciones CERR sin procesar
+│   ├── imrt_fmo_source.h/.cpp # Interfaz IFmoDataSource compartida por FMO/BAO
+│   ├── imrt.h/.cpp            # FMO: ImrtProblem, vecindarios de beamlets
+│   ├── imrt_fmo.h/.cpp        # Solver FMO con AMPL+Gurobi
+│   ├── imrt_bao.h/.cpp        # BAO: vecindarios de ángulos, perturbaciones
+│   └── imrt_builder.h/.cpp    # Builder de la CLI para tokens IMRT
 │
-├── grammars/imrt_bao.xml      # Grammar of the BAO algorithms (grammar2code format)
-├── irace/                     # irace configuration (parameters, scenario, target-runner)
-├── ampl_gurobi/               # FMO models, solver drivers and dosimetry tools
-├── scripts/                   # Experiment runners, analysis and plotting tools
-├── experiments/               # Output of the experiment runners (not distributed)
-└── run_comparison.sh          # Multi-algorithm benchmark runner
+├── grammars/imrt_bao.xml      # Gramática de los algoritmos de BAO (formato grammar2code)
+├── irace/                     # Configuración de irace (parámetros, escenario, target-runner)
+├── ampl_gurobi/               # Modelos de FMO, controladores del solver y herramientas de dosimetría
+├── scripts/                   # Ejecutores de experimentos, herramientas de análisis y graficación
+├── experiments/               # Salida de los ejecutores de experimentos (no se distribuye)
+└── run_comparison.sh          # Ejecutor de benchmark multialgoritmo
 ```
 
 ---
 
-## Build Options
+## Opciones de Compilación
 
-| CMake flag | Default | Description |
+| Bandera de CMake | Por defecto | Descripción |
 |---|---|---|
-| `DEBUG_FLAGS` | ON | Debug symbols (`-g`) |
-| `O3_FLAGS` | OFF | `-O3` optimization |
-| `IRACE_OPTIMISED_FLAGS` | OFF | irace-tuned GCC flags |
-| `OPT_OPTIMISED_FLAGS` | OFF | OpenTuner-tuned GCC flags |
-| `WITH_STATS` | ON | Solution statistics output |
-| `USE_NEW_MAIN` | ON | Component-based algorithm loading |
-| `PORTABLE` | OFF | Static linking |
+| `DEBUG_FLAGS` | ON | Símbolos de depuración (`-g`) |
+| `O3_FLAGS` | OFF | Optimización `-O3` |
+| `IRACE_OPTIMISED_FLAGS` | OFF | Banderas de GCC ajustadas con irace |
+| `OPT_OPTIMISED_FLAGS` | OFF | Banderas de GCC ajustadas con OpenTuner |
+| `WITH_STATS` | ON | Salida de estadísticas de la solución |
+| `USE_NEW_MAIN` | ON | Carga de algoritmos basada en componentes |
+| `PORTABLE` | OFF | Enlazado estático |
 
 ---
 
-## Contributing
+## Contribución
 
-This repository follows a **PR-based workflow** managed by Gentle AI. All changes go through:
+Este repositorio sigue un **flujo de trabajo basado en PR** gestionado por Gentle AI. Todos los cambios pasan por:
 
-1. **Feature branch** off `develop`
-2. **Code changes** with conventional commits
-3. **Pull Request** with automated review
-4. **Merge to `develop`** after approval
+1. **Rama de funcionalidad** a partir de `develop`
+2. **Cambios de código** con commits convencionales
+3. **Pull Request** con revisión automatizada
+4. **Fusión en `develop`** tras la aprobación
 
-### Conventional commit prefixes
+### Prefijos de commits convencionales
 
-- `feat:` — new feature
-- `fix:` — bug fix
-- `perf:` — performance improvement
-- `refactor:` — code restructuring
-- `docs:` — documentation
-- `ci:` — CI/irace configuration
+- `feat:` — nueva funcionalidad
+- `fix:` — corrección de errores
+- `perf:` — mejora de rendimiento
+- `refactor:` — reestructuración de código
+- `docs:` — documentación
+- `ci:` — configuración de CI/irace
 
-### Instance data
+### Datos de instancias
 
-Clinical instance files (Dij matrices, VOILists) are **not tracked** in this repository due to size. Contact the maintainer for access to training instances.
+Los archivos de instancias clínicas (matrices Dij, VOILists) **no se versionan** en este repositorio debido a su tamaño. Contacte al mantenedor para obtener acceso a las instancias de entrenamiento.
 
 ---
 
-## License & Credits
+## Licencia y Créditos
 
-- **EMILI framework**: Federico Pagnozzi (BSD 2-Clause) — `federico.pagnozzi@ulb.ac.be`
-- **IMRT extension** (BAO+FMO, AMPL+Gurobi integration, irace tuning): Marco Rojas
+- **Framework EMILI**: Federico Pagnozzi (BSD 2-Clause) — `federico.pagnozzi@ulb.ac.be`
+- **Extensión IMRT** (BAO+FMO, integración AMPL+Gurobi, ajuste con irace): Marco Rojas
 - **AMPL / Gurobi**: AMPL Optimization Inc. / Gurobi Optimization, LLC
 
 ```
