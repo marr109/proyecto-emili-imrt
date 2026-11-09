@@ -593,6 +593,7 @@ public:
  *   - if every neighbour is tabu, move to the best neighbour overall;       *
  *   - the visited solution is forbidden after every move;                   *
  *   - bestSoFar is updated separately (read by the -it SIGALRM handler).    *
+ *   - the strategy token (first|best) is optional; the default is best.    *
  * Stops on the termination criterion or, if stall_limit > 0, after          *
  * stall_limit consecutive iterations without a real (non-cached) FMO solve. *
  *---------------------------------------------------------------------------*/

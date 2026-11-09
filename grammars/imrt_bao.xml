@@ -24,6 +24,7 @@
     <bao:alpha type="real" min="0.90" max="0.999" stepIfEnumerated="0.001"/>
 
     <!-- COMMON COMPONENTS -->
+    <!-- shift step in degrees; the executed irace run explored only 5 and 10 (see scripts/check_irace_params.py) -->
     <bao:step>
       <![CDATA[1]]>
       <or/>

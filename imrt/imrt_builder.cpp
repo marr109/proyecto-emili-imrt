@@ -622,6 +622,11 @@ emili::TabuMemory* ImrtBuilder::buildTabuTenure()
         prs::printTabPlusOne("tenure", tenure);
         mem = new emili::imrt::ImrtTabuMemory(tenure);
     }
+    // BAO memories, used by tabubao:
+    //   TBao_fixed <tenure>        forbids the last `tenure` visited angle sets (circular buffer)
+    //   TBao_adaptive <min> <max>  same, with a tenure that grows on revisits and shrinks after 2 x tenure quiet moves;
+    //                              it starts at (min + max) / 2
+    //   TBao_attr <tenure>         forbids re-inserting any of the last `tenure` angles that left the plan
     else if (tm.checkToken(TABU_BAO_FIXED)) {
         int tenure = tm.getInteger();
         prs::printTab("BAO tabu memory: fixed tenure on angle sets");

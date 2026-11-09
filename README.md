@@ -58,8 +58,9 @@ The codebase follows a **framework + extension** pattern. The core EMILI library
 |---|---|---|---|
 | Iterated Local Search | `ils` | Best/First improvement | `prangswap`, `improve` |
 | Variable Neighborhood Search | `vns` | Best/First improvement | `bangshake`, `accng` |
-| Tabu Search | `tabu` | Best/First improvement | `TBao_fixed`, `TBao_adaptive` |
-| Iterated Greedy | `ils` + `pgreedy` | Best/First improvement | destruction-reconstruction |
+| Tabu Search (BAO) | `tabubao` | none (own loop, neighbours from the current solution) | `TBao_fixed`, `TBao_adaptive`, `TBao_attr` |
+| Variable Neighborhood Descent | `vnd` | list of neighborhoods | `nangshift`, `nangswapsample`, `nangswapwindow`, `nangflip` |
+| Iterated Greedy | `ils` + `pgreedy` / `pgreedysample` | Best/First improvement | destruction-reconstruction (sampled variant) |
 | Simulated Annealing | `ils nols` + `saacc` | Empty (Metropolis accept) | `saacc s e β i α` |
 
 *All algorithms are composed at runtime via CLI tokens — no recompilation needed.*
@@ -165,6 +166,49 @@ The binary is `build/emili`.
 
 ---
 
+### BAO token reference
+
+Neighborhoods (all change one angle of the K active angles):
+
+| Token | Neighbours | Notes |
+|---|---|---|
+| `nangshift <step> [fixed\|circular\|randorder]` | 2K (angle -step, +step) | step in degrees (1, 5, 10, 20); the scan order only matters for first improvement, default `fixed` |
+| `nangswap` | K x (catalog - K) | full swap, expensive (272 neighbours with the 5-degree catalog) |
+| `nangswapsample <n> [unrestricted]` | n sampled swaps | a plan with no improving sample is only probably a local optimum |
+| `nangswapwindow <deg> [unrestricted]` | swaps within +-deg of the removed angle | |
+| `nangflip 0` | at most K (angle +180) | |
+
+Perturbations (ILS and the `pershake` shake of the general VNS):
+
+| Token | Meaning |
+|---|---|
+| `prangshift <step> <n> [stepwise] [distinct\|replace]` | shifts n angles by a random magnitude in (step, 2 step); `distinct` (default) moves n different angles, `replace` draws the slot of each move independently, so an angle can move more than once; `stepwise` evaluates after every individual move |
+| `prangshiftadaptive <step> <max> <stagnation> [distinct\|replace]` | starts at 1 angle and adds one per `stagnation` rounds without improvement |
+| `prangshiftmag` / `prangshiftadaptivemag` | same, with discrete magnitudes |
+| `pgreedy <D>` / `pgreedysample <D> <sample>` | destroy D angles and rebuild greedily (the sampled variant evaluates `sample` candidates per empty slot) |
+
+Tabu search:
+
+```
+tabubao [first|best] [stall <n>] irandomk tmaxiter <N> nangshift <step> <memory>
+```
+
+- `first|best` is optional (default `best`, the textbook strategy); `stall` stops after n iterations without a new FMO solve (default 100).
+- Memories: `TBao_fixed <tenure>` and `TBao_adaptive <min> <max>` forbid whole angle sets already visited; `TBao_attr <tenure>` forbids re-inserting any of the last `tenure` angles that left the plan.
+- Debug output: `EMILI_TABU_LOG=<file>` writes one csv row per tabu event (start, move, tabu_skip) with the banned list before and after; `EMILI_PERT_TRACE=1` prints the slot and angle change of every perturbation move.
+
+Example:
+
+```bash
+./build/emili instances/CERR_Prostate baoimrt 4 csv trajectory.csv \
+    tabubao first irandomk tmaxiter 1000000 nangshift 10 TBao_adaptive 3 8 \
+    -it 1080 rnds 1
+```
+
+`-it <seconds>` must come before `rnds`. The XML grammar `grammars/imrt_bao.xml` generates these command lines for automatic configuration; `scripts/check_irace_params.py` checks it against the irace parameter space and `scripts/sample_grammar.py` prints random samples.
+
+---
+
 ## Per-organ FMO model and experiment variables
 
 The default FMO model is `ampl_gurobi/fmo.mod` (one overdose weight for all organs at risk). The per-organ model
@@ -182,46 +226,27 @@ The default FMO model is `ampl_gurobi/fmo.mod` (one overdose weight for all orga
 | `EMILI_GUROBI_OPTIONS` | empty | Passed to the solver, e.g. `threads=1` |
 | `EMILI_AMPL_BIN_DIR`, `EMILI_GUROBI_BIN` | repo `.venv` path | AMPL and solver binaries (needed on Linux) |
 
-Defaults reproduce the original behaviour. Commands, conditions and the neighborhood and perturbation tokens used
-in the experiments are in `docs/experimentos-comandos.md`. The solver license is not part of the repository
-(`*.lic` is ignored); see `docs/ampl-gurobi-integration.md` and `ampl_gurobi/README.md`.
+Defaults reproduce the original behaviour. The runners in `scripts/` set the per-organ variables used in the experiments
+(for example `scripts/run_catalog_job.sh`). The solver license is not part of the repository (`*.lic` is ignored);
+see `ampl_gurobi/README.md`.
 
 ## Hyperparameter Tuning (irace)
 
-The `irace_*/` directories contain [irace](https://iridia.ulb.ac.be/irace/) scenarios for automatic algorithm configuration.
+`irace/` holds the [irace](https://iridia.ulb.ac.be/irace/) setup used to configure the BAO metaheuristics:
 
-### Available scenarios
-
-| Scenario | Instances | Algorithms | Parameters | Budget |
-|---|---|---|---|---|
-| `irace_tiny` | 1 tiny | ILS | 6 + 3 weights | ~2 min |
-| `irace_prostate` | 2 sampled | ILS | 4 + 3 weights | ~1.5 h |
-| `irace_prostate_all` | 2 sampled | ILS vs rVNS | varies + 3 weights | ~1.5 h |
-| `irace_all` | 2 medium | ILS/Tabu/VNS/Greedy/SA | varies + 3 weights | ~2 h |
-
-### Tunable FMO weights (all scenarios)
-
-The target-runner **dynamically creates a temporary instance** with the irace-sampled weight values via symlinks (no 75 MB copies):
+| File | Content |
+|---|---|
+| `irace/parameters.irace` | parameter space: algorithm, strategy, step, scan order, neighbourhoods, perturbations, tabu tenures, cooling |
+| `irace/scenario.irace` | budget and instances |
+| `irace/target-runner` | builds the EMILI command line from the sampled parameters and returns the objective |
+| `irace/results/irace.Rdata` | final result of the executed run |
 
 ```bash
-# In parameters.irace:
-w_under     "--w_under "     r,log  (1.0, 1000.0)   # PTV underdose
-w_over      "--w_over "      r,log  (0.01, 10.0)    # OAR overdose
-w_ptv_over  "--w_ptv_over "  r,log  (0.1, 50.0)     # PTV hot-spot
+irace --scenario irace/scenario.irace
 ```
 
-### Running a tuning session
-
-```bash
-# Quick functional test
-irace --scenario irace_tiny/scenario.irace
-
-# Full ILS calibration on prostate
-irace --scenario irace_prostate/scenario.irace
-
-# Algorithm competition
-irace --scenario irace_all/scenario.irace
-```
+The grammar `grammars/imrt_bao.xml` is a superset of this space (steps 1 and 20, `replace` slots); the differences are
+documented in `scripts/check_irace_params.py`.
 
 ---
 
@@ -263,7 +288,7 @@ Homogeneity Index   HI (D2 - D98)/D_Rx   = 0.229
 PTV coverage        V95% of Rx           = 71.85 %
 ```
 
-A **DVH CSV** is also generated (`dvh.csv`) for plotting with `plot_bao_results.py`.
+A **DVH CSV** is also generated (`dvh.csv`). The search trajectory of a run (`csv <file>` option) can be plotted with `scripts/plot_trajectory.py`.
 
 ### Plan quality metrics
 
@@ -295,13 +320,11 @@ Output per algorithm in `comparison_results/`:
 | SA | `SA.log` | ILS + Metropolis cooling |
 | Greedy | `Greedy.log` | ILS + destruction-reconstruction |
 
-Visualize convergence with:
+Trajectory and comparison plots are in `scripts/` (`plot_trajectory.py`, `plot_aggregate_comparison.py`, `plot_boxplot_comparison.py`).
 
-```bash
-python3 plot_bao_results.py results_36ang_k3.csv results_36ang_k4.csv
-```
-
-Generates 4 figures in `plots/`: convergence curves, comparative stats, angle frequency heatmaps, and pair correlation matrices.
+Per-seed analysis of the tabu runs: `scripts/tabu_replay_events.py` rebuilds the tabu-list events from each `trajectory.csv`
+(validating the replay against the logged evaluations) and `scripts/tabu_seed_convergence_csv.py` writes `convergence.csv`
+(best objective so far against real FMO solves).
 
 ---
 
@@ -323,11 +346,12 @@ emili_imrt/
 │   ├── imrt_bao.h/.cpp        # BAO: angle neighborhoods, perturbations
 │   └── imrt_builder.h/.cpp    # CLI builder for IMRT tokens
 │
-├── grámaticas/                # XML grammar definitions per algorithm
-├── irace_*/                   # irace tuning scenarios
-├── plot_bao_results.py        # Convergence & DVH visualization
-├── run_comparison.sh          # Multi-algorithm benchmark runner
-└── generate_doc.py            # Documentation generator
+├── grammars/imrt_bao.xml      # Grammar of the BAO algorithms (grammar2code format)
+├── irace/                     # irace configuration (parameters, scenario, target-runner)
+├── ampl_gurobi/               # FMO models, solver drivers and dosimetry tools
+├── scripts/                   # Experiment runners, analysis and plotting tools
+├── experiments/               # Output of the experiment runners (not distributed)
+└── run_comparison.sh          # Multi-algorithm benchmark runner
 ```
 
 ---
