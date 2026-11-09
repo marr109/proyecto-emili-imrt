@@ -33,7 +33,7 @@ for n in $(seq "$SEED_FROM" "$SEED_TO"); do
   fi
   echo "[$(date '+%H:%M:%S')] RUN seed${seed} (tabu ${STRATEGY} step=${STEP})" | tee -a "$LOG"
   # -it must come BEFORE rnds (after rnds it is ignored silently)
-  "$BIN" instances/CERR_Prostate baoimrt 4 csv "$traj" \
+  "$BIN" "${INSTANCE:-instances/CERR_Prostate}" baoimrt 4 csv "$traj" \
     tabubao "$STRATEGY" irandomk tmaxiter 1000000 nangshift "$STEP" TBao_adaptive 3 8 \
     -it "$BUDGET" rnds "$n" > "$run_log" 2>&1 || true
   if grep -q "Conformity Index" "$run_log" 2>/dev/null; then

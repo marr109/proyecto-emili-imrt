@@ -392,7 +392,17 @@ Este repositorio sigue un **flujo de trabajo basado en PR** gestionado por Gentl
 
 ### Datos de instancias
 
-Los archivos de instancias clínicas (matrices Dij, VOILists) **no se versionan** en este repositorio debido a su tamaño. Contacte al mantenedor para obtener acceso a las instancias de entrenamiento.
+Los archivos de instancias clínicas (matrices Dij, VOILists) **no se versionan** en este repositorio: `instances/` está en el `.gitignore`, de modo que el código se pueda reproducir con cualquier instancia propia. Contacte al mantenedor para obtener acceso a las instancias de entrenamiento.
+
+#### Usar otra instancia
+
+1. Copie la instancia a un directorio bajo `instances/` (por ejemplo `instances/MI_CASO`) con el formato de exportación CERR que lee `CerrFmoSource` (`imrt/cerr_instance.h`):
+   - `<ORGANO>.txt`: ids globales de vóxel; el orden de las líneas es el índice local.
+   - `<ORGANO>_<indice_angulo>.txt`: filas `id_global_voxel id_local_beamlet(desde 1) tasa_de_dosis`.
+   - `beamletIndex.txt`: filas `indice_angulo inicio_global fin_global` (desde 1, inclusivo).
+2. Ejecute indicando la instancia, por ejemplo `./build/emili instances/MI_CASO baoimrt 4 csv trajectory.csv <algoritmo> -it 1080 rnds 1`. Los lanzadores `scripts/run_catalog_job.sh` y `scripts/run_tabu_organs.sh` la toman de la variable `INSTANCE` (por defecto `instances/CERR_Prostate`); el resto de los scripts de `scripts/` todavía fija esa ruta y hay que editarla.
+3. Ajuste lo que depende de las estructuras de la instancia: `EMILI_W_OVER_ORGANS` debe tener un peso por cada órgano en riesgo, en el mismo orden; y los scripts de Python de `ampl_gurobi/` asumen 2 PTV y 2 OAR (`PTV_ORGANS` y `OAR_ORGANS` en `cerr_fmo_ampl.py`), por lo que hay que cambiarlos si la instancia tiene otras estructuras.
+4. Los valores del objetivo de instancias distintas no son comparables entre sí; compare algoritmos dentro de una misma instancia.
 
 ---
 

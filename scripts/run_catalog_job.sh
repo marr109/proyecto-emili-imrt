@@ -95,7 +95,7 @@ fi
 echo "[$(date '+%H:%M:%S')] RUN seed${seed} (${FAMILY} ${CONFIG} ${CATALOG})" >> "$LOG"
 t0=$(date +%s)
 # -it must come BEFORE rnds (after rnds it is ignored silently)
-"$BIN" instances/CERR_Prostate baoimrt 4 csv "$traj" \
+"$BIN" "${INSTANCE:-instances/CERR_Prostate}" baoimrt 4 csv "$traj" \
   $ARGS -it "$TIME_LIMIT" rnds "$N" > "$run_log" 2>&1 || true
 elapsed=$(( $(date +%s) - t0 ))
 if grep -q "Conformity Index" "$run_log" 2>/dev/null; then
