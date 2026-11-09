@@ -11,7 +11,7 @@
 `w_over_organ` and `normalize = 0`, `fmo_organs.mod` returns the same objective
 as `fmo.mod`.
 
-Not wired yet: `ImrtFmoSolver` (C++) does not pass `oar_organ` / `w_over_organ`.
+`ImrtFmoSolver` (C++) passes `oar_organ` and `w_over_organ` to the model (see `initAmpl()` in `imrt/imrt_fmo.cpp`); the per-organ weights come from `EMILI_W_OVER_ORGANS`.
 
 Loader options (environment variables, `cerr_fmo_ampl.py`):
 `EMILI_DMIN`, `EMILI_W_PTV_OVER`, `EMILI_EXCLUDE_OVERLAP=1` (OAR minus PTV).
