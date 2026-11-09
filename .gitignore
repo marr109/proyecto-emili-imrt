@@ -137,3 +137,6 @@ __pycache__/
 irace/results/bak/
 irace/results/recovery_*.Rdata
 irace/iracedump.rda
+
+# DVH curves written by the program in the working directory (derived from the instance)
+/dvh.csv
