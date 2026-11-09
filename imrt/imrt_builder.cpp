@@ -22,6 +22,10 @@
 #define NEIGH_ANGSWAP   "nangswap"
 #define NEIGH_ANGSHIFT  "nangshift"
 #define NEIGH_ANGSHIFT_MULTI "nangshiftmulti"
+#define NEIGH_ANGSWAP_SAMPLE "nangswapsample"
+#define NEIGH_ANGSWAP_WINDOW "nangswapwindow"
+#define NEIGH_ANGFLIP        "nangflip"
+#define NEIGH_ANGSHIFT_FIXEDORDER "fixed"
 #define NEIGH_ANGSHIFT_RANDORDER "randorder"
 #define NEIGH_ANGSHIFT_CIRCULARORDER "circular"
 #define PERT_RANDOM     "prandom"
@@ -44,9 +48,13 @@
 #define OPT_CSV            "csv"
 // ── New metaheuristic components ──────────────────────────────────────────────
 #define PERT_GREEDY        "pgreedy"
+#define PERT_GREEDY_SAMPLE "pgreedysample"
 #define TABU_BAO_FIXED     "TBao_fixed"
 #define TABU_BAO_ADAPTIVE  "TBao_adaptive"
+#define TABU_BAO_ATTR      "TBao_attr"
 #define SHAKE_BANGSHAKE    "bangshake"
+#define ALGO_TABU_BAO      "tabubao"
+#define TABU_BAO_STALL     "stall"
 
 namespace prs {
 namespace imrt {
@@ -269,8 +277,15 @@ emili::Neighborhood* ImrtBuilder::buildNeighborhood()
             // rota circularmente desde ahí (ver AngleShiftNeighborhood::begin()).
             // Sin ninguno de estos tokens, comportamiento idéntico al histórico:
             // orden fijo 0..K-1 — ningún script existente cambia de resultado.
-            bool random_order = tm.checkToken(NEIGH_ANGSHIFT_RANDORDER);
-            bool circular_order = tm.checkToken(NEIGH_ANGSHIFT_CIRCULARORDER);
+            // Token opcional explícito "fixed": orden fijo 0..K-1 (es el comportamiento por defecto).
+            bool fixed_order = tm.checkToken(NEIGH_ANGSHIFT_FIXEDORDER);
+            bool random_order = !fixed_order && tm.checkToken(NEIGH_ANGSHIFT_RANDORDER);
+            bool circular_order = !fixed_order && !random_order && tm.checkToken(NEIGH_ANGSHIFT_CIRCULARORDER);
+            if (fixed_order && (tm.checkToken(NEIGH_ANGSHIFT_RANDORDER) || tm.checkToken(NEIGH_ANGSHIFT_CIRCULARORDER))) {
+                std::cerr << "[IMRT] nangshift: scan order given twice ('" NEIGH_ANGSHIFT_FIXEDORDER
+                          "' with '" NEIGH_ANGSHIFT_RANDORDER "' or '" NEIGH_ANGSHIFT_CIRCULARORDER "')" << std::endl;
+                exit(-1);
+            }
             prs::printTab("BAO neighborhood: angle shift");
             prs::printTabPlusOne("step", step);
             prs::printTabPlusOne("slot order",
@@ -288,6 +303,50 @@ emili::Neighborhood* ImrtBuilder::buildNeighborhood()
             prs::printTab("BAO neighborhood: angle shift (multi, inclusive)");
             for (int s : steps) prs::printTabPlusOne("step", s);
             neigh = new emili::imrt::AngleMultiShiftNeighborhood(*prob, steps);
+        }
+        else if (tm.checkToken(NEIGH_ANGSWAP_SAMPLE)) {
+            // Sintaxis: nangswapsample <n> [unrestricted] — n swaps distintos sorteados en cada begin()
+            int n = tm.getInteger();
+            if (n < 1) {
+                std::cerr << "[IMRT] nangswapsample: n must be >= 1 (got " << n << ")" << std::endl;
+                exit(1);
+            }
+            prs::printTab("BAO neighborhood: angle swap (random sample)");
+            prs::printTabPlusOne("sample size", n);
+            bool unrestricted = tm.checkToken(INIT_K_UNRESTRICTED);
+            prs::printTabPlusOne("catalog", unrestricted ? "unrestricted (full 360)" : "restricted (mod 5)");
+            neigh = new emili::imrt::AngleSwapSubsetNeighborhood(
+                *prob, emili::imrt::AngleSwapSubsetNeighborhood::SAMPLE, n, !unrestricted);
+        }
+        else if (tm.checkToken(NEIGH_ANGSWAP_WINDOW)) {
+            // Sintaxis: nangswapwindow <delta_deg> [unrestricted] — reemplazos a +-delta grados
+            int delta = tm.getInteger();
+            if (delta < 1 || delta > 180) {
+                std::cerr << "[IMRT] nangswapwindow: delta_deg must be in [1, 180] (got "
+                          << delta << ")" << std::endl;
+                exit(1);
+            }
+            prs::printTab("BAO neighborhood: angle swap (window)");
+            prs::printTabPlusOne("delta (deg)", delta);
+            bool unrestricted = tm.checkToken(INIT_K_UNRESTRICTED);
+            prs::printTabPlusOne("catalog", unrestricted ? "unrestricted (full 360)" : "restricted (mod 5)");
+            neigh = new emili::imrt::AngleSwapSubsetNeighborhood(
+                *prob, emili::imrt::AngleSwapSubsetNeighborhood::WINDOW, delta, !unrestricted);
+        }
+        else if (tm.checkToken(NEIGH_ANGFLIP)) {
+            // Sintaxis: nangflip <deltaF_deg> [unrestricted] — reemplazos a +-deltaF del ángulo opuesto
+            int delta = tm.getInteger();
+            if (delta < 0 || delta > 180) {
+                std::cerr << "[IMRT] nangflip: deltaF_deg must be in [0, 180] (got "
+                          << delta << ")" << std::endl;
+                exit(1);
+            }
+            prs::printTab("BAO neighborhood: angle flip (parallel-opposed)");
+            prs::printTabPlusOne("delta (deg)", delta);
+            bool unrestricted = tm.checkToken(INIT_K_UNRESTRICTED);
+            prs::printTabPlusOne("catalog", unrestricted ? "unrestricted (full 360)" : "restricted (mod 5)");
+            neigh = new emili::imrt::AngleSwapSubsetNeighborhood(
+                *prob, emili::imrt::AngleSwapSubsetNeighborhood::FLIP, delta, !unrestricted);
         }
         prs::decrementTabLevel();
         return neigh;
@@ -338,6 +397,16 @@ static void printStepwise(bool sw)
     if (sw) prs::printTabPlusOne("stepwise", "evaluate after each individual move");
 }
 
+// Optional token after the perturbation arguments: "replace" draws the slots with replacement
+// (an angle may be moved more than once); "distinct" (the default) moves distinct angles.
+static bool readReplacement(TokenManager& tm)
+{
+    if (tm.checkToken("replace")) { prs::printTabPlusOne("slots", "with replacement"); return true; }
+    tm.checkToken("distinct");
+    prs::printTabPlusOne("slots", "distinct");
+    return false;
+}
+
 static void printMagnitudes(const std::vector<int>& mags)
 {
     std::string s;
@@ -368,6 +437,22 @@ emili::Perturbation* ImrtBuilder::buildPerturbation()
             prs::printTabPlusOne("D (destroy/rebuild)", D);
             pert = new emili::imrt::GreedyAnglesPerturbation(*prob, D);
         }
+        else if (tm.checkToken(PERT_GREEDY_SAMPLE)) {
+            // Syntax: pgreedysample <D> <sample> [unrestricted]
+            int D      = tm.getInteger();
+            int sample = tm.getInteger();
+            bool unrestricted = tm.checkToken(INIT_K_UNRESTRICTED);
+            if (D < 1 || sample < 1) {
+                std::cerr << "[IMRT] pgreedysample: D and sample must be >= 1 (got D=" << D
+                          << ", sample=" << sample << ")" << std::endl;
+                exit(-1);
+            }
+            prs::printTab("BAO perturbation: sampled greedy construction (sampled IG)");
+            prs::printTabPlusOne("D (destroy/rebuild)", D);
+            prs::printTabPlusOne("sample per step", sample);
+            prs::printTabPlusOne("restricted to 5-degree grid", unrestricted ? 0 : 1);
+            pert = new emili::imrt::SampledGreedyAnglesPerturbation(*prob, D, sample, !unrestricted);
+        }
         else if (tm.checkToken(PERT_ANGSHIFT)) {
             // Sintaxis: prangshift <step> <numSteps>
             // Perturbación descrita por Leslie: desplaza numSteps ángulos
@@ -377,13 +462,14 @@ emili::Perturbation* ImrtBuilder::buildPerturbation()
             // ver AngleShiftMultiPerturbation.
             int step      = tm.getInteger();
             int numSteps  = tm.getInteger();
-            prs::printTab("BAO perturbation: multi angle shift (distinct slots)");
+            prs::printTab("BAO perturbation: multi angle shift");
             prs::printTabPlusOne("step", step);
             prs::printTabPlusOne("numSteps", numSteps);
             bool sw = tm.checkToken("stepwise");
             printStepwise(sw);
+            bool rp = readReplacement(tm);
             pert = new emili::imrt::AngleShiftMultiPerturbation(*prob, step, numSteps,
-                                                                std::vector<int>(), sw);
+                                                                std::vector<int>(), sw, rp);
         }
         else if (tm.checkToken(PERT_ANGSHIFT_ADAPTIVE)) {
             // Sintaxis: prangshiftadaptive <step> <maxNumSteps> <stagnationThreshold>
@@ -403,8 +489,9 @@ emili::Perturbation* ImrtBuilder::buildPerturbation()
             prs::printTabPlusOne("stagnationThreshold", stagnationThreshold);
             bool sw = tm.checkToken("stepwise");
             printStepwise(sw);
+            bool rp = readReplacement(tm);
             pert = new emili::imrt::AdaptiveAngleShiftPerturbation(
-                *prob, step, maxNumSteps, stagnationThreshold, std::vector<int>(), sw);
+                *prob, step, maxNumSteps, stagnationThreshold, std::vector<int>(), sw, rp);
         }
         else if (tm.checkToken(PERT_ANGSHIFT_MAG)) {
             // Sintaxis: prangshiftmag <numSteps> <count> <m1> ... <m_count>
@@ -417,7 +504,8 @@ emili::Perturbation* ImrtBuilder::buildPerturbation()
             printMagnitudes(mags);
             bool sw = tm.checkToken("stepwise");
             printStepwise(sw);
-            pert = new emili::imrt::AngleShiftMultiPerturbation(*prob, 1, numSteps, mags, sw);
+            bool rp = readReplacement(tm);
+            pert = new emili::imrt::AngleShiftMultiPerturbation(*prob, 1, numSteps, mags, sw, rp);
         }
         else if (tm.checkToken(PERT_ANGSHIFT_ADAPTIVE_MAG)) {
             // Sintaxis: prangshiftadaptivemag <maxNumSteps> <stagnationThreshold> <count> <m1> ... <m_count>
@@ -430,8 +518,9 @@ emili::Perturbation* ImrtBuilder::buildPerturbation()
             printMagnitudes(mags);
             bool sw = tm.checkToken("stepwise");
             printStepwise(sw);
+            bool rp = readReplacement(tm);
             pert = new emili::imrt::AdaptiveAngleShiftPerturbation(
-                *prob, 1, maxNumSteps, stagnationThreshold, mags, sw);
+                *prob, 1, maxNumSteps, stagnationThreshold, mags, sw, rp);
         }
         prs::decrementTabLevel();
         return pert;
@@ -539,6 +628,12 @@ emili::TabuMemory* ImrtBuilder::buildTabuTenure()
         prs::printTabPlusOne("tenure", tenure);
         mem = new emili::imrt::BaoTabuMemory(tenure);
     }
+    else if (tm.checkToken(TABU_BAO_ATTR)) {
+        int tenure = tm.getInteger();
+        prs::printTab("BAO tabu memory: removed-angle attribute (FIFO)");
+        prs::printTabPlusOne("tenure", tenure);
+        mem = new emili::imrt::BaoAttributeTabuMemory(tenure);
+    }
     else if (tm.checkToken(TABU_BAO_ADAPTIVE)) {
         int tmin = tm.getInteger();
         int tmax = tm.getInteger();
@@ -550,6 +645,40 @@ emili::TabuMemory* ImrtBuilder::buildTabuTenure()
 
     prs::decrementTabLevel();
     return mem;
+}
+
+/*---------------------------------------------------------------------------*
+ * buildAlgo — BAO tabu search
+ *   tabubao [first|best] [stall <n>] <init> <termination> <neighborhood> <tabu memory>   (default: best)
+ *---------------------------------------------------------------------------*/
+
+emili::LocalSearch* ImrtBuilder::buildAlgo()
+{
+    if (!tm.checkToken(ALGO_TABU_BAO)) return nullptr;
+    prs::printTab("BAO TABU SEARCH (textbook loop)");
+    if (!isBaoProblem()) {
+        std::cerr << "tabubao requires the baoimrt problem" << std::endl;
+        exit(1);
+    }
+    // 'first' / 'best' is optional; without it the textbook strategy (best admissible neighbour) is used.
+    bool first = false;
+    if (tm.checkToken("first"))      first = true;
+    else if (tm.checkToken("best"))  first = false;
+    long stall = 100;
+    if (tm.checkToken(TABU_BAO_STALL)) stall = tm.getInteger();
+    prs::printTabPlusOne("strategy", first ? "first" : "best");
+    prs::printTabPlusOne("stall limit (0 = off)", (int)stall);
+
+    emili::InitialSolution* in = retrieveComponent(COMPONENT_INITIAL_SOLUTION_GENERATOR).get<emili::InitialSolution>();
+    emili::Termination*     te = retrieveComponent(COMPONENT_TERMINATION_CRITERION).get<emili::Termination>();
+    emili::Neighborhood*    ne = retrieveComponent(COMPONENT_NEIGHBORHOOD).get<emili::Neighborhood>();
+    emili::TabuMemory*      tmem = retrieveComponent(COMPONENT_TABU_TENURE).get<emili::TabuMemory>();
+    auto* bmem = dynamic_cast<emili::imrt::BaoTabuMemory*>(tmem);
+    if (bmem == nullptr) {
+        std::cerr << "tabubao requires TBao_fixed, TBao_adaptive or TBao_attr memory" << std::endl;
+        exit(1);
+    }
+    return new emili::imrt::BaoTabuSearch(*in, *te, *ne, *bmem, *castBaoProblem(), first, stall);
 }
 
 /*---------------------------------------------------------------------------*

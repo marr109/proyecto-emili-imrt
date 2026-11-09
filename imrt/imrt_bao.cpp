@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <functional>
 #include "imrt_bao.h"
 
@@ -588,6 +589,122 @@ emili::Solution* AngleShiftNeighborhood::random(emili::Solution* s)
     return s->clone();
 }
 
+//=== Vecindarios: subconjuntos del swap (sample / window / flip) ==============
+
+void AngleSwapSubsetNeighborhood::buildDegreeLookup()
+{
+    degree_to_idx_.assign(360, -1);
+    for (int i = 0; i < n_angles_; ++i)
+        degree_to_idx_[((bao_.angleDegree(i) % 360) + 360) % 360] = i;
+}
+
+std::vector<std::pair<int,int>>
+AngleSwapSubsetNeighborhood::enumerateMoves(const std::vector<int>& angles)
+{
+    std::vector<bool> active_flag(n_angles_, false);
+    for (int a : angles) active_flag[a] = true;
+
+    std::vector<std::pair<int,int>> moves;
+    int K = (int)angles.size();
+    for (int slot = 0; slot < K; ++slot) {
+        if (mode_ == SAMPLE) {
+            // Full swap neighbourhood, same (slot, inactive) order as AngleSwapNeighborhood
+            for (int a = 0; a < n_angles_; ++a)
+                if (!active_flag[a] && isCandidate(a)) moves.push_back(std::make_pair(slot, a));
+            continue;
+        }
+        // WINDOW: centre = current degree; FLIP: centre = opposite degree.
+        // Offsets enumerated from -delta to +delta; a catalog index is added
+        // at most once per slot (relevant when delta >= 180).
+        int deg    = ((bao_.angleDegree(angles[slot]) % 360) + 360) % 360;
+        int centre = (mode_ == FLIP) ? (deg + 180) % 360 : deg;
+        std::vector<bool> seen(n_angles_, false);
+        for (int off = -param_; off <= param_; ++off) {
+            int d   = (((centre + off) % 360) + 360) % 360;
+            int idx = degree_to_idx_[d];
+            if (idx < 0 || active_flag[idx] || seen[idx] || !isCandidate(idx))
+                continue;   // not in catalog / off the 5-deg grid / already active
+            seen[idx] = true;
+            moves.push_back(std::make_pair(slot, idx));
+        }
+    }
+    return moves;
+}
+
+int AngleSwapSubsetNeighborhood::size()
+{
+    int n_cand = 0;
+    for (int i = 0; i < n_angles_; ++i) if (isCandidate(i)) ++n_cand;
+    int full = bao_.K() * std::max(0, n_cand - bao_.K());
+    if (mode_ == SAMPLE) return std::min(param_, full);
+    // Upper bound for WINDOW/FLIP: (2*delta+1) degrees per slot
+    return std::min(full, bao_.K() * (2 * param_ + 1));
+}
+
+emili::Neighborhood::NeighborhoodIterator
+AngleSwapSubsetNeighborhood::begin(emili::Solution* base)
+{
+    BaoSolution* bs = static_cast<BaoSolution*>(base);
+    base_angles_ = bs->active_angles_;
+    moves_ = enumerateMoves(base_angles_);
+
+    if (mode_ == SAMPLE) {
+        // Partial Fisher-Yates: the first m entries are a uniform sample
+        // without replacement; re-drawn at every begin().
+        int total = (int)moves_.size();
+        int m = std::min(param_, total);
+        for (int i = 0; i < m; ++i) {
+            int j = i + emili::generateRandomNumber() % (total - i);
+            std::swap(moves_[i], moves_[j]);
+        }
+        moves_.resize(m);
+    }
+
+    cur_move_ = 0;
+    first_    = true;
+    return emili::Neighborhood::NeighborhoodIterator(this, base);
+}
+
+void AngleSwapSubsetNeighborhood::reset()
+{
+    // The move list (and the sample) is kept from begin(), like base_angles_.
+    cur_move_ = 0;
+    first_    = true;
+}
+
+emili::Solution* AngleSwapSubsetNeighborhood::computeStep(emili::Solution* step)
+{
+    if (!first_) ++cur_move_;
+    first_ = false;
+    if (cur_move_ >= (int)moves_.size()) return nullptr;
+
+    BaoSolution* bs = static_cast<BaoSolution*>(step);
+    bs->active_angles_ = base_angles_;
+    bs->active_angles_[moves_[cur_move_].first] = moves_[cur_move_].second;
+    bao_.evaluateSolution(*bs);
+    return bs;
+}
+
+void AngleSwapSubsetNeighborhood::reverseLastMove(emili::Solution* step)
+{
+    BaoSolution* bs = static_cast<BaoSolution*>(step);
+    bs->active_angles_ = base_angles_;
+}
+
+emili::Solution* AngleSwapSubsetNeighborhood::random(emili::Solution* s)
+{
+    // Uniform draw from this neighbourhood's definition around s (for SAMPLE,
+    // a uniform draw from the full swap neighbourhood).
+    BaoSolution* bs = static_cast<BaoSolution*>(s);
+    std::vector<std::pair<int,int>> moves = enumerateMoves(bs->active_angles_);
+    if (moves.empty()) return s->clone();
+    const std::pair<int,int>& mv = moves[emili::generateRandomNumber() % moves.size()];
+    BaoSolution* nb = static_cast<BaoSolution*>(s->clone());
+    nb->active_angles_[mv.first] = mv.second;
+    bao_.evaluateSolution(*nb);
+    return nb;
+}
+
 //=== Vecindario: shift de ángulos, múltiples steps (versión inclusiva) =======
 
 void AngleMultiShiftNeighborhood::buildDegreeOrder()
@@ -762,10 +879,14 @@ static void applyAngleShiftMultiMove(BaoSolution* nb, int n_angles,
                                       const std::vector<int>* magnitudes_deg = nullptr,
                                       const BaoProblem* bao = nullptr,
                                       const std::vector<int>* degree_to_idx = nullptr,
-                                      const std::function<void()>* after_move = nullptr)
+                                      const std::function<void()>* after_move = nullptr,
+                                      bool with_replacement = false)
 {
     int K = (int)nb->active_angles_.size();
-    n_moves = std::min(n_moves, K);   // no se puede mover más ángulos distintos que K
+    if (K <= 0) return;
+    // Sin reposición (por defecto) no se pueden mover más ángulos distintos que K.
+    // Con reposición n_moves cuenta movimientos y puede superar K.
+    if (!with_replacement) n_moves = std::min(n_moves, K);
 
     // Permutación de slots (Fisher-Yates): garantiza n_moves slots DISTINTOS,
     // a diferencia de n_moves sorteos independientes con reposición que
@@ -773,9 +894,11 @@ static void applyAngleShiftMultiMove(BaoSolution* nb, int n_angles,
     // vez de varios — el bug que se detectó revisando datos reales).
     std::vector<int> slot_order(K);
     for (int i = 0; i < K; ++i) slot_order[i] = i;
-    for (int i = K - 1; i > 0; --i) {
-        int j = emili::generateRandomNumber() % (i + 1);
-        std::swap(slot_order[i], slot_order[j]);
+    if (!with_replacement) {
+        for (int i = K - 1; i > 0; --i) {
+            int j = emili::generateRandomNumber() % (i + 1);
+            std::swap(slot_order[i], slot_order[j]);
+        }
     }
 
     // Magnitud aleatoria en (base_step, 2*base_step): igual razón que en
@@ -791,8 +914,11 @@ static void applyAngleShiftMultiMove(BaoSolution* nb, int n_angles,
     for (int a : nb->active_angles_) active_flag[a] = true;
 
     for (int m = 0; m < n_moves; ++m) {
-        int ai = slot_order[m];
+        // Con reposición cada movimiento sortea su slot por separado: un mismo ángulo
+        // puede moverse más de una vez, y el segundo movimiento parte de su posición nueva.
+        int ai = with_replacement ? (int)(emili::generateRandomNumber() % K) : slot_order[m];
         const int max_attempts = 8;
+        const int idx_before = nb->active_angles_[ai];
         for (int attempt = 0; attempt < max_attempts; ++attempt) {
             if (magnitudes_deg) {
                 // Modo magnitud discreta: +-m grados reales (no posiciones del
@@ -828,6 +954,12 @@ static void applyAngleShiftMultiMove(BaoSolution* nb, int n_angles,
             nb->active_angles_[ai] = candidate;
             break;
         }
+        // EMILI_PERT_TRACE=1: una linea por movimiento (slot elegido, grado antes y despues) para
+        // comprobar si un mismo ángulo se mueve más de una vez dentro de la misma perturbación.
+        static const bool pert_trace = std::getenv("EMILI_PERT_TRACE") != nullptr;
+        if (pert_trace && bao)
+            std::cerr << "PERTTRACE pert_move=" << m << " slot=" << ai << " from=" << bao->angleDegree(idx_before)
+                      << " to=" << bao->angleDegree(nb->active_angles_[ai]) << " replacement=" << (with_replacement ? 1 : 0) << "\n";
         // Modo stepwise: el llamador evalua el estado intermedio tras cada slot
         // (aunque no se haya podido mover). No consume numeros aleatorios.
         if (after_move) (*after_move)();
@@ -840,12 +972,12 @@ emili::Solution* AngleShiftMultiPerturbation::perturb(emili::Solution* solution)
 
     BaoSolution* nb = static_cast<BaoSolution*>(solution->clone());
     int K = (int)nb->active_angles_.size();
-    int n_moves = std::min(numSteps_, K);   // no se puede mover más ángulos distintos que K
+    int n_moves = replace_ ? numSteps_ : std::min(numSteps_, K);   // sin reposición: no más ángulos distintos que K
 
     std::function<void()> eval_each = [this, nb]() { bao_.evaluateSolution(*nb); };
     applyAngleShiftMultiMove(nb, n_angles_, n_moves, degree_order_, degree_rank_, step_,
                               magnitudes_.empty() ? nullptr : &magnitudes_, &bao_, &degree_to_idx_,
-                              stepwise_ ? &eval_each : nullptr);
+                              stepwise_ ? &eval_each : nullptr, replace_);
     if (stepwise_) return nb;   // el ultimo movimiento ya evaluo el estado final
 
     // Por defecto: una sola resolución FMO al final, con los n_moves ángulos
@@ -910,7 +1042,7 @@ emili::Solution* AdaptiveAngleShiftPerturbation::perturb(emili::Solution* soluti
     applyAngleShiftMultiMove(nb, n_angles_, effective_numSteps, degree_order_,
                               degree_rank_, step_,
                               magnitudes_.empty() ? nullptr : &magnitudes_, &bao_, &degree_to_idx_,
-                              stepwise_ ? &eval_each : nullptr);
+                              stepwise_ ? &eval_each : nullptr, replace_);
 
     if (!stepwise_) bao_.evaluateSolution(*nb);
     return nb;
@@ -1052,9 +1184,68 @@ emili::Solution* GreedyAnglesPerturbation::perturb(emili::Solution* current)
     return bs;
 }
 
+emili::Solution* SampledGreedyAnglesPerturbation::perturb(emili::Solution* current)
+{
+    BaoSolution* bs = static_cast<BaoSolution*>(current->clone());
+    const int n = bao_.nAngles();
+    const int K = bao_.K();
+
+    std::vector<bool> active_flag(n, false);
+    for (int ai : bs->active_angles_) active_flag[ai] = true;
+    int n_inactive = 0;
+    for (int a = 0; a < n; ++a) if (!active_flag[a]) ++n_inactive;
+    int D = std::min(D_, std::min(K, n_inactive));
+
+    // Destroy: remove D random active angles (Fisher-Yates prefix)
+    for (int i = 0; i < D; ++i) {
+        int ai = i + emili::generateRandomNumber() % (K - i);
+        std::swap(bs->active_angles_[i], bs->active_angles_[ai]);
+        active_flag[bs->active_angles_[i]] = false;
+    }
+    bs->active_angles_.erase(bs->active_angles_.begin(),
+                              bs->active_angles_.begin() + D);
+
+    // Rebuild: per empty slot, evaluate a random sample of the pool, keep the best
+    for (int step = 0; step < D; ++step) {
+        std::vector<int> pool;
+        for (int a = 0; a < n; ++a) {
+            if (active_flag[a]) continue;
+            if (restrict5_ && ((bao_.angleDegree(a) % 360) + 360) % 5 != 0) continue;
+            pool.push_back(a);
+        }
+        if (pool.empty()) break;   // cannot happen with n > K candidates, kept as a guard
+
+        int m = std::min(sample_, (int)pool.size());
+        for (int i = 0; i < m; ++i) {   // partial Fisher-Yates shuffle
+            int j = i + emili::generateRandomNumber() % ((int)pool.size() - i);
+            std::swap(pool[i], pool[j]);
+        }
+
+        double best_f = 1e30;
+        int    best_a = pool[0];
+        for (int i = 0; i < m; ++i) {
+            bs->active_angles_.push_back(pool[i]);
+            std::sort(bs->active_angles_.begin(), bs->active_angles_.end());
+            bao_.evaluateSolution(*bs);   // cached FMO solve (also logs to the CSV)
+            double f = bs->getSolutionValue();
+            if (f < best_f) { best_f = f; best_a = pool[i]; }
+            bs->active_angles_.erase(
+                std::find(bs->active_angles_.begin(),
+                          bs->active_angles_.end(), pool[i]));
+        }
+
+        bs->active_angles_.push_back(best_a);
+        std::sort(bs->active_angles_.begin(), bs->active_angles_.end());
+        active_flag[best_a] = true;
+    }
+
+    bao_.evaluateSolution(*bs);   // finalise: intensities, degrees and value (cache hit)
+    return bs;
+}
+
 //=== Memoria tabú =============================================================
 
-bool BaoTabuMemory::tabu_check(emili::Solution* s)
+bool BaoTabuMemory::isTabu(emili::Solution* s) const
 {
     const BaoSolution* bs = static_cast<const BaoSolution*>(s);
 
@@ -1102,7 +1293,7 @@ void AdaptiveBaoTabuMemory::resizeTenure(int new_tenure)
 
 void AdaptiveBaoTabuMemory::forbid(emili::Solution* s)
 {
-    if (tabu_check(s)) {
+    if (isTabu(s)) {
         // Oscilación detectada: la solución ya fue visitada → aumenta el tenure para escapar
         if (tenure_ < tenure_max_) resizeTenure(tenure_ + 1);
         since_last_revisit_ = 0;
@@ -1117,6 +1308,132 @@ void AdaptiveBaoTabuMemory::forbid(emili::Solution* s)
 
     // Registra la solución en el buffer tabú base
     BaoTabuMemory::forbid(s);
+}
+
+bool BaoAttributeTabuMemory::isTabu(emili::Solution* s) const
+{
+    const BaoSolution* bs = static_cast<const BaoSolution*>(s);
+    for (int a : bs->active_angles_) {
+        bool in_removed = std::find(removed_.begin(), removed_.end(), a) != removed_.end();
+        bool in_current = std::find(current_.begin(), current_.end(), a) != current_.end();
+        if (in_removed && !in_current) return true;   // would re-insert a recently removed angle
+    }
+    return false;
+}
+
+void BaoAttributeTabuMemory::forbid(emili::Solution* s)
+{
+    const BaoSolution* bs = static_cast<const BaoSolution*>(s);
+    if (has_current_) {
+        for (int a : current_) {
+            bool kept = std::find(bs->active_angles_.begin(), bs->active_angles_.end(), a) != bs->active_angles_.end();
+            if (!kept) {
+                removed_.push_back(a);
+                if ((int)removed_.size() > tenure_) removed_.pop_front();
+            }
+        }
+    }
+    current_ = bs->active_angles_;
+    has_current_ = true;
+}
+
+//=== BAO tabu search ==========================================================
+
+static std::string joinAngles(const std::vector<int>& v)
+{
+    std::string r;
+    for (size_t i = 0; i < v.size(); ++i) { if (i) r += ";"; r += std::to_string(v[i]); }
+    return r;
+}
+
+emili::Solution* BaoTabuSearch::search(emili::Solution* initial)
+{
+    termcriterion->reset();
+    neighbh->reset();
+    memory_.reset();
+
+    const bool trace = std::getenv("EMILI_TABU_TRACE") != nullptr;
+    // EMILI_TABU_LOG=<file>: one CSV row per tabu event (start, tabu_skip, move)
+    // with the banned-angle list, to see how angles enter and leave it.
+    std::ofstream tlog;
+    if (const char* lp = std::getenv("EMILI_TABU_LOG")) {
+        tlog.open(lp);
+        if (!tlog.is_open()) std::cerr << "tabubao: cannot open EMILI_TABU_LOG file " << lp << std::endl;
+        tlog << "iter,event,angles,objective,banned_before,banned_after,inserted,expired,real_solves\n";
+    }
+    auto row = [&](long it, const char* ev, emili::Solution* sol, const std::vector<int>& before,
+                   const std::vector<int>& after) {
+        if (!tlog.is_open()) return;
+        std::vector<int> ins, exp;
+        for (int x : after)  if (std::find(before.begin(), before.end(), x) == before.end()) ins.push_back(x);
+        for (int x : before) if (std::find(after.begin(), after.end(), x) == after.end()) exp.push_back(x);
+        tlog << it << "," << ev << ",\"" << joinAngles(static_cast<BaoSolution*>(sol)->active_angles_) << "\","
+             << sol->getSolutionValue() << ",\"" << joinAngles(before) << "\",\"" << joinAngles(after) << "\",\""
+             << joinAngles(ins) << "\",\"" << joinAngles(exp) << "\"," << bao_.realSolveCount() << std::endl;
+    };
+    emili::Solution* current = initial->clone();
+    if (*bestSoFar > *current) *bestSoFar = *current;
+    { auto b = memory_.bannedAngles(); memory_.forbid(current); row(0, "start", current, b, memory_.bannedAngles()); }
+
+    size_t last_real   = bao_.realSolveCount();
+    long   stall_iters = 0;
+    long   iter        = 0;
+
+    do {
+        emili::Solution* chosen   = nullptr;  // best admissible (or first improving)
+        emili::Solution* best_any = nullptr;  // fallback when everything is tabu
+
+        for (auto it = neighbh->begin(current); it != neighbh->end(); ++it) {
+            emili::Solution* cand = *it;
+            // Record improvements immediately: the -it SIGALRM handler may end
+            // the run mid-scan and reports bestSoFar.
+            const bool aspiration = *cand < *bestSoFar;
+            if (aspiration) *bestSoFar = *cand;
+            if (best_any == nullptr || *cand < *best_any) {
+                delete best_any;
+                best_any = cand->clone();
+            }
+            bool admissible = aspiration || !memory_.isTabu(cand);
+            if (!admissible) {
+                if (trace) std::cerr << "TABUSKIP f=" << cand->getSolutionValue() << "\n";
+                { auto b = memory_.bannedAngles(); row(iter + 1, "tabu_skip", cand, b, b); }
+                continue;
+            }
+            if (chosen == nullptr || *cand < *chosen) {
+                delete chosen;
+                chosen = cand->clone();
+            }
+            if (first_ && *cand < *current) break;
+        }
+
+        if (chosen == nullptr) chosen = best_any; else delete best_any;
+        if (chosen == nullptr) break;  // empty neighbourhood
+
+        const double prev = current->getSolutionValue();
+        delete current;
+        current = chosen;
+        { auto b = memory_.bannedAngles(); memory_.forbid(current); row(iter + 1, "move", current, b, memory_.bannedAngles()); }
+        if (*bestSoFar > *current) *bestSoFar = *current;
+        ++iter;
+
+        if (trace)
+            std::cerr << "TABUMOVE " << iter << " " << prev << " -> "
+                      << current->getSolutionValue()
+                      << " tenure=" << memory_.getTenure()
+                      << " real=" << bao_.realSolveCount() << "\n";
+
+        size_t real = bao_.realSolveCount();
+        stall_iters = (real == last_real) ? stall_iters + 1 : 0;
+        last_real = real;
+        if (stall_limit_ > 0 && stall_iters >= stall_limit_) {
+            std::cout << "tabubao: stopped after " << stall_iters
+                      << " iterations without a new FMO solve (cycling)" << std::endl;
+            break;
+        }
+    } while (!termcriterion->terminate(bestSoFar, current));
+
+    delete current;
+    return bestSoFar->clone();
 }
 
 } // namespace imrt

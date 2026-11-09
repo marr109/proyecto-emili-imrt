@@ -63,6 +63,7 @@ public:
     virtual emili::Termination*        buildTermination()        override;
     virtual emili::TabuMemory*         buildTabuTenure()         override;
     virtual emili::Shake*              buildShake()              override;
+    virtual emili::LocalSearch*        buildAlgo()               override;
 
 private:
     emili::imrt::ImrtProblem* castProblem();

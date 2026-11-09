@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+
+<!-- Grammar of the BAO algorithms (K=4, CERR_Prostate) in the grammar2code format.
+     It generates only the algorithm part of the command line. The caller prepends
+     "instances/CERR_Prostate baoimrt 4 csv <trajectory>" and appends "-it <seconds> rnds <seed>"
+     (-it must precede rnds). Not expressible here, so handle in irace (forbidden file):
+     sa_metropolis / saacc need T_start > T_end. -->
+<gr:grammar xmlns:gr="grammar">
+  <gr:derivations xmlns:bao="bao">
+
+    <!-- PARAMETERS -->
+    <bao:pert_angles type="int" min="1" max="3" stepIfEnumerated="1"/>
+    <bao:mag_angles type="int" min="1" max="2" stepIfEnumerated="1"/>
+    <bao:stagnation type="int" min="1" max="6" stepIfEnumerated="1"/>
+    <!-- level k replaces k angles; with K=4 the level 4 would replace all of them (a random restart), so cap at K-1 -->
+    <bao:shake_levels type="int" min="1" max="3" stepIfEnumerated="1"/>
+    <bao:sample_size type="int" min="2" max="40" stepIfEnumerated="1"/>
+    <bao:window_deg type="int" min="10" max="60" stepIfEnumerated="5"/>
+    <bao:tenure_min type="int" min="1" max="10" stepIfEnumerated="1"/>
+    <bao:tenure_max type="int" min="11" max="60" stepIfEnumerated="1"/>
+    <bao:t_start type="real" min="100.0" max="5000.0" stepIfEnumerated="10.0"/>
+    <bao:t_end type="real" min="1.0" max="500.0" stepIfEnumerated="1.0"/>
+    <bao:beta type="real" min="1.0" max="40.0" stepIfEnumerated="0.5"/>
+    <bao:alpha type="real" min="0.90" max="0.999" stepIfEnumerated="0.001"/>
+
+    <!-- COMMON COMPONENTS -->
+    <bao:step>
+      <![CDATA[1]]>
+      <or/>
+      <![CDATA[5]]>
+      <or/>
+      <![CDATA[10]]>
+      <or/>
+      <![CDATA[20]]>
+    </bao:step>
+
+    <bao:strategy>
+      <![CDATA[first]]>
+      <or/>
+      <![CDATA[best]]>
+    </bao:strategy>
+
+    <!-- scan order only matters for first improvement; best rejects a non-fixed order -->
+    <bao:scan_order>
+      <![CDATA[fixed]]>
+      <or/>
+      <![CDATA[circular]]>
+      <or/>
+      <![CDATA[randorder]]>
+    </bao:scan_order>
+
+    <bao:shift_step>
+      <![CDATA[nangshift ]]><bao:step/>
+    </bao:shift_step>
+
+    <!-- vnd/vns neighbourhoods (full swap excluded: 272 neighbours do not fit the budget) -->
+    <bao:neighbourhood>
+      <![CDATA[nangshift 20]]>
+      <or/>
+      <![CDATA[nangshift 10]]>
+      <or/>
+      <![CDATA[nangshift 5]]>
+      <or/>
+      <![CDATA[nangshift 1]]>
+      <or/>
+      <![CDATA[nangswapsample ]]><bao:sample_size/>
+      <or/>
+      <![CDATA[nangswapwindow ]]><bao:window_deg/>
+      <or/>
+      <![CDATA[nangflip 0]]>
+    </bao:neighbourhood>
+
+    <bao:neighbourhood_list>
+      <bao:neighbourhood/><![CDATA[ ]]><bao:neighbourhood/>
+      <or/>
+      <bao:neighbourhood/><![CDATA[ ]]><bao:neighbourhood/><![CDATA[ ]]><bao:neighbourhood/>
+    </bao:neighbourhood_list>
+
+    <bao:stepwise>
+      <![CDATA[]]>
+      <or/>
+      <![CDATA[ stepwise]]>
+    </bao:stepwise>
+
+    <!-- slots of a shift perturbation: distinct angles (default) or drawn with replacement (an angle may move more than once) -->
+    <bao:replacement>
+      <![CDATA[distinct]]>
+      <or/>
+      <![CDATA[replace]]>
+    </bao:replacement>
+
+    <!-- perturbations: never more than 2 angles for the magnitude variants -->
+    <bao:perturbation>
+      <![CDATA[prangshift ]]><bao:step/><![CDATA[ ]]><bao:pert_angles/><![CDATA[ ]]><bao:replacement/>
+      <or/>
+      <![CDATA[prangshiftadaptive ]]><bao:step/><![CDATA[ ]]><bao:mag_angles/><![CDATA[ ]]><bao:stagnation/><![CDATA[ ]]><bao:replacement/>
+      <or/>
+      <![CDATA[prangshiftmag ]]><bao:mag_angles/><![CDATA[ 2 5 10]]><bao:stepwise/><![CDATA[ ]]><bao:replacement/>
+      <or/>
+      <![CDATA[prangshiftadaptivemag ]]><bao:mag_angles/><![CDATA[ ]]><bao:stagnation/><![CDATA[ 2 5 10]]><bao:stepwise/><![CDATA[ ]]><bao:replacement/>
+    </bao:perturbation>
+
+    <!-- ALGORITHMS -->
+    <bao:local_search>
+      <![CDATA[first irandomk locmin ]]><bao:shift_step/><![CDATA[ ]]><bao:scan_order/>
+      <or/>
+      <![CDATA[best irandomk locmin ]]><bao:shift_step/>
+    </bao:local_search>
+
+    <bao:ils>
+      <![CDATA[ils first irandomk locmin ]]><bao:shift_step/><![CDATA[ ]]><bao:scan_order/><![CDATA[ tmaxiter 1000000 ]]><bao:perturbation/><![CDATA[ baoimprove rejectrepeated]]>
+      <or/>
+      <![CDATA[ils best irandomk locmin ]]><bao:shift_step/><![CDATA[ tmaxiter 1000000 ]]><bao:perturbation/><![CDATA[ baoimprove rejectrepeated]]>
+    </bao:ils>
+
+    <bao:sa>
+      <![CDATA[sa irandomk tmaxiter 1000000 ]]><bao:shift_step/><![CDATA[ sa_metropolis ]]><bao:t_start/><![CDATA[ ]]><bao:t_end/><![CDATA[ ]]><bao:beta/>
+      <or/>
+      <![CDATA[sa irandomk tmaxiter 1000000 ]]><bao:shift_step/><![CDATA[ saacc ]]><bao:t_start/><![CDATA[ ]]><bao:t_end/><![CDATA[ 0 1 ]]><bao:alpha/>
+    </bao:sa>
+
+    <bao:vnd>
+      <![CDATA[vnd first irandomk locmin ]]><bao:neighbourhood_list/>
+    </bao:vnd>
+
+    <bao:tabu>
+      <![CDATA[tabubao ]]><bao:strategy/><![CDATA[ irandomk tmaxiter 1000000 ]]><bao:shift_step/><![CDATA[ TBao_adaptive ]]><bao:tenure_min/><![CDATA[ ]]><bao:tenure_max/>
+    </bao:tabu>
+
+    <!-- general VNS: local search is a single shift neighbourhood or a VND; shake is multi-scale or a perturbation -->
+    <bao:vns_search>
+      <![CDATA[first irandomk locmin ]]><bao:shift_step/>
+      <or/>
+      <![CDATA[vnd first irandomk locmin ]]><bao:neighbourhood_list/>
+    </bao:vns_search>
+
+    <bao:vns_shake>
+      <![CDATA[bangshake ]]><bao:shake_levels/>
+      <or/>
+      <![CDATA[pershake ]]><bao:perturbation/>
+    </bao:vns_shake>
+
+    <bao:vns>
+      <![CDATA[vns ]]><bao:vns_search/><![CDATA[ tmaxiter 1000000 ]]><bao:vns_shake/><![CDATA[ accng baoimprove rejectrepeated]]>
+    </bao:vns>
+
+    <bao:algorithm>
+      <bao:local_search/>
+      <or/>
+      <bao:ils/>
+      <or/>
+      <bao:sa/>
+      <or/>
+      <bao:vnd/>
+      <or/>
+      <bao:tabu/>
+      <or/>
+      <bao:vns/>
+    </bao:algorithm>
+
+    <!-- FINAL OUTPUT FOR grammar2code -->
+    <bao:main_algorithm output="params">
+      <![CDATA[]]>
+      <bao:algorithm/>
+    </bao:main_algorithm>
+
+  </gr:derivations>
+</gr:grammar>

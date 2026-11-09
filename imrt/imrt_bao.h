@@ -10,6 +10,7 @@
 #include <set>
 #include <string>
 #include <vector>
+#include <deque>
 
 namespace emili {
 namespace imrt {
@@ -105,6 +106,8 @@ public:
     std::vector<std::string> oarOrganNames() const { return fmo_.oarOrganNames(); }
 
     void setVerbose(bool v) { verbose_ = v; fmo_.setVerbose(v); }
+    // Number of distinct angle sets solved by the FMO (real, non-cached solves).
+    size_t realSolveCount()  const { return fmo_cache_.size(); }
     bool isReady()          const { return fmo_.isReady(); }
     void openCsvLog(const std::string& path);
 };
@@ -291,6 +294,75 @@ public:
 };
 
 /*---------------------------------------------------------------------------*
+ *                  RESTRICTED ANGLE-SWAP NEIGHBORHOODS                      *
+ *                                                                           *
+ * Cheaper subsets of AngleSwapNeighborhood (one active angle replaced by   *
+ * one inactive catalog angle), materialised as an explicit move list      *
+ * (slot, replacement catalog index) built at every begin():               *
+ *   SAMPLE: min(n, K*(n_angles-K)) distinct swaps drawn uniformly without *
+ *           replacement from the full swap neighbourhood, re-drawn at     *
+ *           every begin() (Gutierrez & Cabrera-Guerrero 2018, N2).        *
+ *   WINDOW: replacement within +-delta degrees (circular) of the slot's   *
+ *           current angle; deterministic.                                  *
+ *   FLIP:   replacement within +-delta degrees of (angle+180) mod 360;    *
+ *           deterministic (Aleman et al. 2008, "flip").                    *
+ * Replacements already active are never generated, so K is preserved and  *
+ * no neighbour contains duplicated angles. Degrees that are not in the    *
+ * catalog are skipped. By default (restrict_to_5deg_grid_ = true, same    *
+ * convention and default as RandomKAnglesInit) only catalog angles that   *
+ * are multiples of 5 degrees are candidates, so a run started on the 5-deg *
+ * grid stays on it ("restricted" = 72 angles); with the optional builder  *
+ * token "unrestricted" the full catalog is used.                          *
+ * The slot is replaced in place (no sort), like                           *
+ * AngleShiftNeighborhood; the FMO cache key is sorted in evaluateSolution. *
+ * random() draws one move uniformly from the same definition (for SA).    *
+ *---------------------------------------------------------------------------*/
+class AngleSwapSubsetNeighborhood : public emili::Neighborhood {
+public:
+    enum Mode { SAMPLE, WINDOW, FLIP };
+
+private:
+    BaoProblem& bao_;
+    int         n_angles_;
+    Mode        mode_;
+    int         param_;                // SAMPLE: n; WINDOW/FLIP: delta in degrees
+    bool        restrict_to_5deg_grid_; // true: only catalog angles with degree % 5 == 0
+
+    std::vector<int> degree_to_idx_;   // degree (0..359) -> catalog index, -1 if absent
+
+    // State for iteration
+    std::vector<int> base_angles_;               // active angles at begin()
+    std::vector<std::pair<int,int>> moves_;      // (slot, replacement catalog index)
+    int  cur_move_;
+    bool first_;
+
+    void buildDegreeLookup();
+    bool isCandidate(int idx) const {
+        return !restrict_to_5deg_grid_ || ((bao_.angleDegree(idx) % 360) + 360) % 5 == 0;
+    }
+    // All moves of this neighbourhood's definition for `angles` (SAMPLE: the
+    // full swap neighbourhood, before sampling).
+    std::vector<std::pair<int,int>> enumerateMoves(const std::vector<int>& angles);
+
+    virtual emili::Solution* computeStep(emili::Solution* step)  override;
+    virtual void reverseLastMove(emili::Solution* step)           override;
+
+public:
+    AngleSwapSubsetNeighborhood(BaoProblem& p, Mode mode, int param,
+                                bool restrict_to_5deg_grid = true)
+        : bao_(p), n_angles_(p.nAngles()), mode_(mode), param_(param)
+        , restrict_to_5deg_grid_(restrict_to_5deg_grid)
+        , cur_move_(0), first_(true)
+    { buildDegreeLookup(); }
+
+    virtual emili::Neighborhood::NeighborhoodIterator
+            begin(emili::Solution* base) override;
+    virtual void reset() override;
+    virtual emili::Solution* random(emili::Solution* s) override;
+    virtual int size() override;
+};
+
+/*---------------------------------------------------------------------------*
  *                  ANGLE SHIFT PERTURBATION, multi (for ILS)                *
  *                                                                           *
  * Perturbación descrita en la reunión con Leslie: desplaza numSteps         *
@@ -311,6 +383,7 @@ class AngleShiftMultiPerturbation : public emili::Perturbation {
     // del rango (step, 2*step) posiciones. Vacio = modo rango (original).
     std::vector<int> magnitudes_;
     bool stepwise_;   // opt-in: evaluar tras cada movimiento individual
+    bool replace_;    // opt-in: slots sorteados con reposición (un ángulo puede moverse más de una vez)
 
     std::vector<int> degree_order_;
     std::vector<int> degree_rank_;
@@ -321,9 +394,9 @@ class AngleShiftMultiPerturbation : public emili::Perturbation {
 public:
     AngleShiftMultiPerturbation(BaoProblem& bao, int step, int numSteps,
                                 const std::vector<int>& magnitudes = std::vector<int>(),
-                                bool stepwise = false)
+                                bool stepwise = false, bool replace = false)
         : emili::Perturbation(), bao_(bao), n_angles_(bao.nAngles())
-        , step_(step), numSteps_(numSteps), magnitudes_(magnitudes), stepwise_(stepwise) {}
+        , step_(step), numSteps_(numSteps), magnitudes_(magnitudes), stepwise_(stepwise), replace_(replace) {}
 
     virtual emili::Solution* perturb(emili::Solution* solution) override;
 };
@@ -356,6 +429,7 @@ class AdaptiveAngleShiftPerturbation : public emili::Perturbation {
 
     std::vector<int> magnitudes_;   // ver AngleShiftMultiPerturbation (vacio = modo rango)
     bool stepwise_;
+    bool replace_;   // ver AngleShiftMultiPerturbation
 
     std::vector<int> degree_order_;
     std::vector<int> degree_rank_;
@@ -371,11 +445,11 @@ public:
     AdaptiveAngleShiftPerturbation(BaoProblem& bao, int step,
                                     int maxNumSteps, int stagnationThreshold,
                                     const std::vector<int>& magnitudes = std::vector<int>(),
-                                    bool stepwise = false)
+                                    bool stepwise = false, bool replace = false)
         : emili::Perturbation(), bao_(bao), n_angles_(bao.nAngles())
         , step_(step), maxNumSteps_(maxNumSteps)
         , stagnationThreshold_(stagnationThreshold)
-        , magnitudes_(magnitudes), stepwise_(stepwise)
+        , magnitudes_(magnitudes), stepwise_(stepwise), replace_(replace)
         , last_objective_(1e30), stagnation_count_(0), level_(0) {}
 
     virtual emili::Solution* perturb(emili::Solution* solution) override;
@@ -439,11 +513,19 @@ public:
         , memory_(tenure)
         , head_(0), count_(0), tenure_(tenure) {}
 
-    virtual bool tabu_check(emili::Solution* s) override;
+    // Legacy semantic used by the generic EMILI `tabu` token: true when the
+    // angle set IS in the tabu list. Kept unchanged for reproducibility.
+    virtual bool tabu_check(emili::Solution* s) override { return isTabu(s); }
     virtual void forbid(emili::Solution* s)     override;
     virtual void reset() override { head_ = 0; count_ = 0; }
 
+    // Unambiguous query: true if the angle set is stored in the tabu list.
+    virtual bool isTabu(emili::Solution* s) const;
+
     int  getTenure() const { return tenure_; }
+
+    // Angles currently banned by the memory (empty for configuration memories).
+    virtual std::vector<int> bannedAngles() const { return {}; }
 };
 
 
@@ -467,6 +549,66 @@ public:
         , since_last_revisit_(0) {}
 
     virtual void forbid(emili::Solution* s) override;
+};
+
+
+/*---------------------------------------------------------------------------*
+ *                  BAO ATTRIBUTE TABU MEMORY (token TBao_attr)               *
+ *                                                                           *
+ * Move-attribute memory instead of whole-solution memory. forbid() is       *
+ * called with the new current solution after every move; the angles that    *
+ * left the active set since the previous call are pushed into a FIFO of     *
+ * `tenure` angles. A candidate is tabu iff it contains an angle that is in  *
+ * the FIFO and not in the current solution, i.e. it would re-insert an      *
+ * angle removed less than `tenure` removals ago. The comparison is on angle *
+ * sets, so slot order is irrelevant.                                        *
+ *---------------------------------------------------------------------------*/
+class BaoAttributeTabuMemory : public BaoTabuMemory {
+    std::deque<int> removed_;       // most recent at the back, at most tenure_ entries
+    std::vector<int> current_;      // active angles of the last forbid() call
+    bool has_current_;
+
+public:
+    explicit BaoAttributeTabuMemory(int tenure)
+        : BaoTabuMemory(tenure), has_current_(false) {}
+
+    virtual bool isTabu(emili::Solution* s) const override;
+    virtual void forbid(emili::Solution* s) override;
+    virtual void reset() override { BaoTabuMemory::reset(); removed_.clear(); current_.clear(); has_current_ = false; }
+    virtual std::vector<int> bannedAngles() const override { return std::vector<int>(removed_.begin(), removed_.end()); }
+};
+
+
+/*---------------------------------------------------------------------------*
+ *                     BAO TABU SEARCH (token `tabubao`)                     *
+ *                                                                           *
+ * Textbook tabu search, independent of emili::FirstTabuSearch /             *
+ * BestTabuSearch (which rebuild the neighbourhood from bestSoFar):          *
+ *   - neighbours are generated from the CURRENT solution;                   *
+ *   - a neighbour is admissible if it is not tabu, or if it beats the best  *
+ *     so far (aspiration);                                                  *
+ *   - best:  move to the best admissible neighbour, even if worse;          *
+ *     first: move to the first admissible neighbour improving the current   *
+ *            one, otherwise to the best admissible neighbour of the scan;   *
+ *   - if every neighbour is tabu, move to the best neighbour overall;       *
+ *   - the visited solution is forbidden after every move;                   *
+ *   - bestSoFar is updated separately (read by the -it SIGALRM handler).    *
+ * Stops on the termination criterion or, if stall_limit > 0, after          *
+ * stall_limit consecutive iterations without a real (non-cached) FMO solve. *
+ *---------------------------------------------------------------------------*/
+class BaoTabuSearch : public emili::LocalSearch {
+    BaoTabuMemory& memory_;
+    BaoProblem&    bao_;
+    bool           first_;
+    long           stall_limit_;
+public:
+    BaoTabuSearch(emili::InitialSolution& in, emili::Termination& te,
+                  emili::Neighborhood& ne, BaoTabuMemory& mem, BaoProblem& bao,
+                  bool first, long stall_limit)
+        : emili::LocalSearch(in, te, ne), memory_(mem), bao_(bao)
+        , first_(first), stall_limit_(stall_limit) {}
+
+    virtual emili::Solution* search(emili::Solution* initial) override;
 };
 
 
@@ -501,6 +643,27 @@ class GreedyAnglesPerturbation : public emili::Perturbation {
 public:
     GreedyAnglesPerturbation(BaoProblem& bao, int D)
         : emili::Perturbation(), bao_(bao), D_(D) {}
+
+    virtual emili::Solution* perturb(emili::Solution* current) override;
+};
+
+/*---------------------------------------------------------------------------*
+ *              SAMPLED GREEDY ANGLES PERTURBATION (sampled IG)              *
+ *                                                                           *
+ * Like GreedyAnglesPerturbation, but each reconstruction step evaluates     *
+ * only `sample` randomly drawn inactive angles (restricted to the 5-degree  *
+ * grid when restrict5), so a perturbation costs at most D*sample FMO        *
+ * solves (cache hits are free).                                             *
+ *---------------------------------------------------------------------------*/
+class SampledGreedyAnglesPerturbation : public emili::Perturbation {
+    BaoProblem& bao_;
+    int         D_;          // number of angles to destroy and rebuild
+    int         sample_;     // candidates evaluated per reconstruction step
+    bool        restrict5_;  // only 5-degree-grid angles are candidates
+
+public:
+    SampledGreedyAnglesPerturbation(BaoProblem& bao, int D, int sample, bool restrict5 = true)
+        : emili::Perturbation(), bao_(bao), D_(D), sample_(sample), restrict5_(restrict5) {}
 
     virtual emili::Solution* perturb(emili::Solution* current) override;
 };
