@@ -21,7 +21,7 @@
 - [IMRT Problem Formulation](#imrt-problem-formulation)
 - [Quick Start](#quick-start)
 - [Command-Line Usage](#command-line-usage)
-- [Per-organ FMO model and experiment variables](#per-organ-fmo-model-and-experiment-variables)
+- [Hyperparameter Tuning (irace)](#hyperparameter-tuning-irace)
 - [Clinical Report (ICRU-83)](#clinical-report-icru-83)
 - [Algorithm Competition](#algorithm-competition)
 - [Project Structure](#project-structure)
@@ -182,8 +182,48 @@ The default FMO model is `ampl_gurobi/fmo.mod` (one overdose weight for all orga
 | `EMILI_GUROBI_OPTIONS` | empty | Passed to the solver, e.g. `threads=1` |
 | `EMILI_AMPL_BIN_DIR`, `EMILI_GUROBI_BIN` | repo `.venv` path | AMPL and solver binaries (needed on Linux) |
 
-Defaults reproduce the original behaviour. The solver license is not part of the repository (`*.lic` is ignored);
-see `docs/setup-calafate.md` for the Linux server setup and `ampl_gurobi/README.md` for the local environment.
+Defaults reproduce the original behaviour. Commands, conditions and the neighborhood and perturbation tokens used
+in the experiments are in `docs/experimentos-comandos.md`. The solver license is not part of the repository
+(`*.lic` is ignored); see `docs/ampl-gurobi-integration.md` and `ampl_gurobi/README.md`.
+
+## Hyperparameter Tuning (irace)
+
+The `irace_*/` directories contain [irace](https://iridia.ulb.ac.be/irace/) scenarios for automatic algorithm configuration.
+
+### Available scenarios
+
+| Scenario | Instances | Algorithms | Parameters | Budget |
+|---|---|---|---|---|
+| `irace_tiny` | 1 tiny | ILS | 6 + 3 weights | ~2 min |
+| `irace_prostate` | 2 sampled | ILS | 4 + 3 weights | ~1.5 h |
+| `irace_prostate_all` | 2 sampled | ILS vs rVNS | varies + 3 weights | ~1.5 h |
+| `irace_all` | 2 medium | ILS/Tabu/VNS/Greedy/SA | varies + 3 weights | ~2 h |
+
+### Tunable FMO weights (all scenarios)
+
+The target-runner **dynamically creates a temporary instance** with the irace-sampled weight values via symlinks (no 75 MB copies):
+
+```bash
+# In parameters.irace:
+w_under     "--w_under "     r,log  (1.0, 1000.0)   # PTV underdose
+w_over      "--w_over "      r,log  (0.01, 10.0)    # OAR overdose
+w_ptv_over  "--w_ptv_over "  r,log  (0.1, 50.0)     # PTV hot-spot
+```
+
+### Running a tuning session
+
+```bash
+# Quick functional test
+irace --scenario irace_tiny/scenario.irace
+
+# Full ILS calibration on prostate
+irace --scenario irace_prostate/scenario.irace
+
+# Algorithm competition
+irace --scenario irace_all/scenario.irace
+```
+
+---
 
 ## Clinical Report (ICRU-83)
 
@@ -283,6 +323,8 @@ emili_imrt/
 │   ├── imrt_bao.h/.cpp        # BAO: angle neighborhoods, perturbations
 │   └── imrt_builder.h/.cpp    # CLI builder for IMRT tokens
 │
+├── grámaticas/                # XML grammar definitions per algorithm
+├── irace_*/                   # irace tuning scenarios
 ├── plot_bao_results.py        # Convergence & DVH visualization
 ├── run_comparison.sh          # Multi-algorithm benchmark runner
 └── generate_doc.py            # Documentation generator
@@ -320,7 +362,7 @@ This repository follows a **PR-based workflow** managed by Gentle AI. All change
 - `perf:` — performance improvement
 - `refactor:` — code restructuring
 - `docs:` — documentation
-- `ci:` — CI configuration
+- `ci:` — CI/irace configuration
 
 ### Instance data
 
@@ -331,7 +373,7 @@ Clinical instance files (Dij matrices, VOILists) are **not tracked** in this rep
 ## License & Credits
 
 - **EMILI framework**: Federico Pagnozzi (BSD 2-Clause) — `federico.pagnozzi@ulb.ac.be`
-- **IMRT extension** (BAO+FMO, AMPL+Gurobi integration): Marco Rojas
+- **IMRT extension** (BAO+FMO, AMPL+Gurobi integration, irace tuning): Marco Rojas
 - **AMPL / Gurobi**: AMPL Optimization Inc. / Gurobi Optimization, LLC
 
 ```

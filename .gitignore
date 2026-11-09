@@ -132,3 +132,8 @@ x/
 /ampl_gurobi/pareto_*.json
 /ampl_gurobi/run_all*.sh
 __pycache__/
+
+# irace run artefacts that are not results
+irace/results/bak/
+irace/results/recovery_*.Rdata
+irace/iracedump.rda
