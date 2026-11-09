@@ -11,10 +11,21 @@ a set of K gantry angles solves the same QP the C++ pipeline would build:
 Organ order and row offsets follow the C++ loader:
   PTV: PTVHD, PTVLD (dmin 65 Gy, dmax_ptv 1.07*65)
   OAR: BLADDER, RECTUM (dmax 50 Gy)
+
+Optional BODY structure (whole patient, used only for the conformity index in
+dosimetry_batch.py, never in the optimization): BODY_<a>.txt files with the same
+format as the other <ORGAN>_<a>.txt. They are looked up in EMILI_BODY_DIR if set,
+otherwise in the instance folder, and are loaded lazily and only for the angles of
+the plan being evaluated (BODY is much larger than the other structures). Voxel ids
+are assumed to be the linear indices of the common CT grid, i.e. the same id means
+the same patient voxel in every structure.
 """
 import os
 import tempfile
 from collections import defaultdict
+
+import numpy as np
+import scipy.sparse as sp
 
 from amplpy import AMPL
 
@@ -29,6 +40,7 @@ DMAX_OAR = 50.0
 DMAX_PTV = 1.07 * DMIN
 MAX_INTENSITY = float(os.environ.get("EMILI_MAX_INTENSITY", 15000.0))   # per-beamlet cap; default = original placeholder
 EXCLUDE_OVERLAP = os.environ.get("EMILI_EXCLUDE_OVERLAP", "0") == "1"   # OAR minus PTV
+BODY_DIR = os.environ.get("EMILI_BODY_DIR") or None    # where BODY_<a>.txt live; default = instance folder
 W_UNDER = 1.0
 W_PTV_OVER = float(os.environ.get("EMILI_W_PTV_OVER", 0.0))
 
@@ -72,6 +84,34 @@ class CerrInstance:
                 self.n_rows[organ] = len(rows)
                 self.row_off[organ] = off
                 off += len(rows)
+
+    def body_path(self, a):
+        return os.path.join(BODY_DIR or self.path, f"BODY_{a}.txt")
+
+    def has_body(self, angles):
+        """True if BODY_<a>.txt exists for every angle of the plan."""
+        return all(os.path.exists(self.body_path(a)) for a in angles)
+
+    def body_dose(self, active, x):
+        """Dose of every BODY voxel touched by the plan: sum_b influence * x_b.
+
+        `active`: angles of the plan; `x`: beamlet intensities ordered as in the
+        solvers (sorted angles, ascending global beamlet). Returns (voxel_ids, dose),
+        one entry per distinct voxel; voxels absent from the files receive 0 Gy.
+        Only the BODY files of `active` are read (no body cache is kept).
+        """
+        v_all, c_all, d_all = [], [], []
+        n = 0
+        for a in sorted(active):
+            s, e = self.beamlet_range[a]
+            arr = np.loadtxt(self.body_path(a), usecols=(0, 1, 2), ndmin=2, comments="#")
+            v_all.append(arr[:, 0].astype(np.int64))
+            c_all.append(n + arr[:, 1].astype(np.int64) - 1)
+            d_all.append(arr[:, 2])
+            n += e - s + 1
+        ids, rows = np.unique(np.concatenate(v_all), return_inverse=True)
+        A = sp.csr_matrix((np.concatenate(d_all), (rows, np.concatenate(c_all))), shape=(len(ids), n))
+        return ids, A @ np.asarray(x)
 
     def angle(self, a):
         """Parse and cache all dose entries of one angle, for every organ."""
