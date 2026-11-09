@@ -38,20 +38,6 @@ for seed in $(seq -w 1 15); do
     fi
   fi
 
-  if [ -f "${seed_dir}/convergence.png" ]; then
-    echo "[$(date '+%H:%M:%S')] SKIP plot seed${seed}" | tee -a "$LOG"
-    continue
-  fi
-
-  "$PY" scripts/plot_trajectory.py \
-    --csv "$traj" \
-    --skip-trajectory \
-    --improvements-csv "${seed_dir}/trajectory_improvements.csv" \
-    --convergence-output "${seed_dir}/convergence.png" \
-    --iterations-output "${seed_dir}/iterations.png" \
-    >> "$run_log" 2>&1
-
-  echo "[$(date '+%H:%M:%S')] PLOT seed${seed}" | tee -a "$LOG"
 done
 
 echo "[$(date '+%H:%M:%S')] BATCH COMPLETE" | tee -a "$LOG"

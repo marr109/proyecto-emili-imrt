@@ -73,13 +73,5 @@ for n in $(seq "$SEED_FROM" "$SEED_TO"); do
     continue
   fi
 
-  if [ ! -f "${seed_dir}/convergence.png" ]; then
-    "${PY:-ampl_gurobi/.venv/bin/python3}" scripts/plot_trajectory.py \
-      --csv "$traj" --skip-trajectory \
-      --improvements-csv "${seed_dir}/trajectory_improvements.csv" \
-      --convergence-output "${seed_dir}/convergence.png" \
-      --iterations-output "${seed_dir}/iterations.png" >> "$run_log" 2>&1 || true
-    echo "[$(date '+%H:%M:%S')] PLOT seed${seed}" | tee -a "$LOG"
-  fi
 done
 echo "[$(date '+%H:%M:%S')] BATCH COMPLETE (step=${STEP} ${CATALOG})" | tee -a "$LOG"

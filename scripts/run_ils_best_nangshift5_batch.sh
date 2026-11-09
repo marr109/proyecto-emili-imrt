@@ -13,7 +13,7 @@ for seed in $(seq -w 1 15); do
   seed_dir="${OUTBASE}/seed${seed}"
   traj="${seed_dir}/trajectory.csv"
 
-  if [ -f "$traj" ] && [ "$(grep -c "^" "$traj" 2>/dev/null)" -gt 1 ] && [ -f "${seed_dir}/convergence.png" ]; then
+  if [ -f "$traj" ] && [ "$(grep -c "^" "$traj" 2>/dev/null)" -gt 1 ]; then
     echo "[$(date '+%H:%M:%S')] SKIP seed${seed} (ya existe: $traj + plots)" | tee -a "$LOG"
     continue
   fi
@@ -34,13 +34,6 @@ for seed in $(seq -w 1 15); do
       >> "$LOG" 2>&1
   fi
 
-  "$PY" scripts/plot_trajectory.py \
-    --csv "${seed_dir}/trajectory.csv" \
-    --skip-trajectory \
-    --improvements-csv "${seed_dir}/trajectory_improvements.csv" \
-    --convergence-output "${seed_dir}/convergence.png" \
-    --iterations-output "${seed_dir}/iterations.png" \
-    >> "$LOG" 2>&1
 
   echo "[$(date '+%H:%M:%S')] DONE seed${seed}" | tee -a "$LOG"
 done

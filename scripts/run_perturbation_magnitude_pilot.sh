@@ -13,7 +13,7 @@ for mag in 15 30 45; do
     seed_dir="${OUTBASE}/mag${mag}/seed${seed}"
     traj="${seed_dir}/trajectory.csv"
 
-    if [ -f "$traj" ] && [ "$(grep -c "^" "$traj" 2>/dev/null)" -gt 1 ] && [ -f "${seed_dir}/convergence.png" ]; then
+    if [ -f "$traj" ] && [ "$(grep -c "^" "$traj" 2>/dev/null)" -gt 1 ]; then
       echo "[$(date '+%H:%M:%S')] SKIP mag${mag}/seed${seed} (ya existe)" | tee -a "$LOG"
       continue
     fi
@@ -34,13 +34,6 @@ for mag in 15 30 45; do
         >> "$LOG" 2>&1
     fi
 
-    "$PY" scripts/plot_trajectory.py \
-      --csv "${traj}" \
-      --skip-trajectory \
-      --improvements-csv "${seed_dir}/trajectory_improvements.csv" \
-      --convergence-output "${seed_dir}/convergence.png" \
-      --iterations-output "${seed_dir}/iterations.png" \
-      >> "$LOG" 2>&1
 
     "$PY" scripts/plot_ils_trajectory.py \
       --csv "${traj}" \

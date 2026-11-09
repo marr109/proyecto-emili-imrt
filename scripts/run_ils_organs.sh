@@ -106,14 +106,5 @@ for n in $(seq "$SEED_FROM" "$SEED_TO"); do
 
   # Same per-seed plots as the old batches (convergence and iterations).
   # plot_ils_trajectory.py is NOT called: it re-simulates ILS semantics and is only valid for
-  # first + the original perturbations.
-  if [ ! -f "${seed_dir}/convergence.png" ]; then
-    "${PY:-ampl_gurobi/.venv/bin/python3}" scripts/plot_trajectory.py \
-      --csv "$traj" --skip-trajectory \
-      --improvements-csv "${seed_dir}/trajectory_improvements.csv" \
-      --convergence-output "${seed_dir}/convergence.png" \
-      --iterations-output "${seed_dir}/iterations.png" >> "$run_log" 2>&1 || true
-    echo "[$(date '+%H:%M:%S')] PLOT seed${seed}" | tee -a "$LOG"
-  fi
 done
 echo "[$(date '+%H:%M:%S')] BATCH COMPLETE (pert=${VARIANT} order=${ORDER} step=${STEP} ${STRATEGY} ${CATALOG})" | tee -a "$LOG"

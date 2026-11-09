@@ -89,10 +89,7 @@ run_one() {
     > "$rlog" 2>&1
 
   if grep -q "Conformity Index" "$rlog" 2>/dev/null; then
-    "$PY" scripts/plot_trajectory.py --csv "$traj" --skip-trajectory \
-      --improvements-csv "${dir}/trajectory_improvements.csv" \
-      --convergence-output "${dir}/convergence.png" \
-      --iterations-output "${dir}/iterations.png" >> "$rlog" 2>&1 || true
+    : # no per-seed plots; see scripts/regen_seed_plots.sh
   else
     echo "WARNING ${step}/${cat}${osuf}/${strat}/seed${seed}: sin marca de corrida completa" >> "$MASTER"
   fi

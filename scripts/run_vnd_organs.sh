@@ -7,7 +7,7 @@ set -euo pipefail
 #   10-5       : nangshift 10, then nangshift 5
 #   10-swap    : nangshift 10, then nangswap (replace one angle by an inactive one)
 #   10-5-swap  : nangshift 10, nangshift 5, then nangswap
-# Output: ${OUT_ROOT:-experiments/new}/vns/nangshift<config>/data/first/seedNN/{trajectory.csv,run.log}
+# Output: ${OUT_ROOT:-experiments/new}/vnd/nangshift<config>/data/first/seedNN/{trajectory.csv,run.log}
 #
 # Model settings (override via environment): same defaults as the other per-organ batches.
 
@@ -24,10 +24,12 @@ case "$CONFIG" in
   10-5)      NEIGH="nangshift 10 nangshift 5" ;;
   10-swap)   NEIGH="nangshift 10 nangswap" ;;
   10-5-swap) NEIGH="nangshift 10 nangshift 5 nangswap" ;;
-  *) echo "config must be 10-5|10-swap|10-5-swap, got: $CONFIG" >&2; exit 1 ;;
+  10-5-sample) NEIGH="nangshift 10 nangshift 5 nangswapsample 10" ;;
+  10-5-sample-window-flip) NEIGH="nangshift 10 nangshift 5 nangswapsample 10 nangswapwindow 20 nangflip 0" ;;
+  *) echo "config must be 10-5|10-swap|10-5-swap|10-5-sample|10-5-sample-window-flip, got: $CONFIG" >&2; exit 1 ;;
 esac
 
-BASE="${OUT_ROOT:-experiments/new}/vns/nangshift${CONFIG}"
+BASE="${OUT_ROOT:-experiments/new}/vnd/nangshift${CONFIG}"
 OUTBASE="${BASE}/data/first"
 LOG="${BASE}/first_batch.log"
 mkdir -p "$OUTBASE"

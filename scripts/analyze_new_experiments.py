@@ -34,8 +34,8 @@ ORDER_ES = {"fixed": "Fijo", "circular": "Circular", "random": "Random"}
 PERTS = OrderedDict([("range3", ""), ("adaptive", "-adaptive"), ("mag2", "-mag2"),
                      ("mag2-stepwise", "-mag2-stepwise"),
                      ("adaptivemag-stepwise", "-adaptivemag-stepwise")])
-PERT_ES = {"range3": "range3 (3 ang.)", "adaptive": "adaptive", "mag2": "mag2 (2 ang.)",
-           "mag2-stepwise": "mag2-stepwise", "adaptivemag-stepwise": "adaptivemag-stepwise"}
+PERT_ES = {"range3": "P1 (3 ángulos)", "adaptive": "P2 (adaptativa)", "mag2": "P3 (2 ángulos, ±5°/±10°)",
+           "mag2-stepwise": "P4 (2 ángulos, por pasos)", "adaptivemag-stepwise": "P5 (adaptativa, por pasos)"}
 CALS = OrderedDict([("linear", "-budget"), ("geometric", "-budget-geometric")])
 CAL_ES = {"linear": "SA lineal", "geometric": "SA geométrico"}
 PALETTE = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
