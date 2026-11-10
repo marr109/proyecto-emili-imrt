@@ -254,43 +254,14 @@ documentadas en `scripts/check_irace_params.py`.
 
 ## Informe Clínico (ICRU-83)
 
-Cada ejecución de BAO+FMO produce un resumen clínico del plan:
+Cada ejecución de BAO+FMO imprime al final un resumen clínico del plan, con estas secciones:
 
-```
-================================================================
-  IMRT FMO RESULT   K=4 beams
-================================================================
-Selected angles (deg) : [ 160, 220, 270, 290 ]
-FMO objective f*      : 231180.90
-Prescription dose Rx  : 68.00 Gy
+- **Resultado del FMO:** ángulos seleccionados, valor del objetivo y dosis de prescripción.
+- **Estadísticas de dosis por estructura (Gy):** número de vóxeles, Dmin, Dmean, Dmax, D95, D5 y D2.
+- **Restricciones de DVH:** meta, valor alcanzado y estado de cada una (por ejemplo D95 del PTV frente a 0,95·Rx, D2 del PTV frente a 1,07·Rx y Dmax de los órganos en riesgo).
+- **Índices de calidad del plan:** índice de conformidad (CI), índice de homogeneidad (HI) y cobertura V95% del PTV.
 
-----------------------------------------------------------------
-  Per-organ dose statistics  (Gy)
-----------------------------------------------------------------
-Structure    Voxels    Dmin   Dmean    Dmax     D95      D5      D2
-----------------------------------------------------------------
-PTV_68         6770   54.28   67.53   79.16   60.77   73.83   74.92
-Bladder       11596    0.13   35.29   70.02       -   63.10   64.21
-Rectum         1764    0.04   38.55   67.51       -   62.20   64.70
-
-----------------------------------------------------------------
-  DVH constraints  (clinical goals)
-----------------------------------------------------------------
-Structure  Metric          Goal        Achieved      Status
-----------------------------------------------------------------
-PTV_68     D95 >= 0.95*Rx  64.60       60.77         VIOL
-PTV_68     D2  <= 1.07*Rx  72.76       74.92         VIOL
-Bladder    Dmax <= limit   50.00       70.02         VIOL
-
-----------------------------------------------------------------
-  Plan quality indices
-----------------------------------------------------------------
-Conformity Index    CI (V_Rx / V_PTV)    = 1.001
-Homogeneity Index   HI (D2 - D98)/D_Rx   = 0.229
-PTV coverage        V95% of Rx           = 71.85 %
-```
-
-También se genera un **CSV de DVH** (`dvh.csv`). La trayectoria de búsqueda de una ejecución (opción `csv <file>`) puede graficarse con `scripts/plot_trajectory.py`.
+También se genera un **CSV de DVH** (`dvh.csv`) en el directorio de ejecución. La trayectoria de búsqueda de una ejecución (opción `csv <archivo>`) puede graficarse con `scripts/plot_trajectory.py`.
 
 ### Métricas de calidad del plan
 
