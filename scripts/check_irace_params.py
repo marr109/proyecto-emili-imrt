@@ -3,7 +3,8 @@
 
   python scripts/check_irace_params.py   -> prints OK / DIFF / KNOWN, exit 1 on any unexplained DIFF
 
-parameters.irace is hand-written (the GRAMMAR2CODE path is disabled), so this guards against drift. Three checks:
+parameters.irace is the hand-written record of the executed irace run (irace/parameters_g2c.txt is generated from the grammar
+by scripts/grammar2code_irace.py), so this guards against drift between the two. Three checks:
   1. numeric bounds of every parameter,
   2. categorical values (step, strategy, scan order, neighbourhoods, perturbations, stepwise),
   3. dependencies: for every algorithm, the set of parameter combinations that can be active at the same time

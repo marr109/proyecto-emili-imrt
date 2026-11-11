@@ -1,0 +1,52 @@
+#!/usr/bin/env python3
+"""irace target runner driven by the grammar: grammar2code translates the configuration, EMILI runs it, f* is printed.
+
+Called by irace as: target-runner-g2c <candidate> <instance id> <seed> <instance> [--parameter=value ...]
+The parameters come from irace/parameters_g2c.txt (scripts/grammar2code_irace.py generates it from grammars/imrt_bao.xml).
+
+Environment:
+  GRAMMAR2CODE       path to the grammar2code executable (default: grammar2code in the PATH)
+  EMILI_ROOT         repository root (default: the parent of this folder)
+  IRACE_RUN_SECONDS  wall-clock budget of each run, default 1080
+  G2C_DRY_RUN=1      print the EMILI command that would run and stop (no solver)
+"""
+import os
+import re
+import subprocess
+import sys
+import tempfile
+
+ROOT = os.environ.get("EMILI_ROOT", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+BUDGET = int(os.environ.get("IRACE_RUN_SECONDS", "1080"))
+G2C = os.environ.get("GRAMMAR2CODE", "grammar2code")
+GRAMMAR = os.path.join(ROOT, "grammars", "imrt_bao.xml")
+cand, inst_id, seed, instance = sys.argv[1:5]
+params = sys.argv[5:]
+
+env = dict(os.environ, EMILI_FMO_MODEL="organs", EMILI_W_OVER_ORGANS="0.5,0.8", EMILI_DMIN="68",
+           EMILI_W_PTV_OVER="0.5", EMILI_EXCLUDE_OVERLAP="1", EMILI_MAX_INTENSITY="100")
+with tempfile.TemporaryDirectory(prefix="irace_g2c_") as tmp:
+    # the grammar writes the algorithm part of the command line into the file `params` (output="params")
+    t = subprocess.run([G2C, GRAMMAR, "--depth=1", "--target_dir=" + tmp] + params, capture_output=True, text=True)
+    pfile = os.path.join(tmp, "params")
+    if t.returncode != 0 or not os.path.exists(pfile):
+        sys.stderr.write("grammar2code failed for: %s\n%s%s\n" % (" ".join(params), t.stdout[-300:], t.stderr[-300:]))
+        sys.exit(1)
+    algorithm = open(pfile).read().split()
+    # -it must come BEFORE rnds
+    argv = [os.path.join(ROOT, "build", "emili"), os.path.join(ROOT, "instances", instance), "baoimrt", "4",
+            "csv", os.path.join(tmp, "trajectory.csv")] + algorithm + ["-it", str(BUDGET), "rnds", str(int(seed) % 1000000 + 1)]
+    if os.environ.get("G2C_DRY_RUN"):
+        print(" ".join(argv))
+        sys.exit(0)
+    try:
+        p = subprocess.run(argv, env=env, cwd=ROOT, capture_output=True, text=True, timeout=BUDGET + 600)
+    except subprocess.TimeoutExpired:
+        print("Infinity")
+        sys.exit(0)
+    out = p.stdout + p.stderr
+    m = re.findall(r"FMO objective f\*\s*:\s*([-+0-9.eE]+)", out)
+    if not m:
+        sys.stderr.write("no f* for: %s\n%s\n" % (" ".join(argv), out[-500:]))
+        sys.exit(1)
+    print(m[-1])

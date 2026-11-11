@@ -1,0 +1,22 @@
+diff --git a/src/params2code.cpp b/src/params2code.cpp
+index 797cb96..c031c7c 100644
+--- a/src/params2code.cpp
++++ b/src/params2code.cpp
+@@ -160,7 +160,7 @@ void grammar::params2code::copy_single_files()
+         }
+         
+         stream_ << "Copying " << src.string() << " to " << dst.string() << std::endl;
+-        boost::filesystem::copy_file(src, dst, boost::filesystem::copy_option::overwrite_if_exists);
++        boost::filesystem::copy_file(src, dst, boost::filesystem::copy_options::overwrite_existing);
+     }
+     stream_ << std::endl;
+ }
+@@ -195,7 +195,7 @@ void grammar::params2code::copy_files_with_filter()
+                     boost::filesystem::path cp_src = src / filename;
+                     boost::filesystem::path cp_dst = dst / filename;
+                     stream_ << "Copying " << cp_src << " to " << cp_dst << std::endl;
+-                    boost::filesystem::copy_file(cp_src, cp_dst, boost::filesystem::copy_option::overwrite_if_exists);
++                    boost::filesystem::copy_file(cp_src, cp_dst, boost::filesystem::copy_options::overwrite_existing);
+                 }
+             }
+         }

@@ -1,0 +1,14 @@
+# irace scenario driven by the grammar (grammars/imrt_bao.xml -> grammar2code). Same budget as scenario.irace.
+# Generate the parameter file first: GRAMMAR2CODE=<path> python ../scripts/grammar2code_irace.py
+# Paths are relative to this folder: run irace from here.
+targetRunner       = "./target-runner-g2c"
+trainInstancesFile = "./instances.txt"
+parameterFile      = "./parameters_g2c.txt"
+logFile            = "./results/irace_g2c.Rdata"
+maxExperiments     = 300
+parallel           = 12
+seed               = 42
+firstTest          = 3
+nbIterations       = 3
+eachTest           = 1
+debugLevel         = 1
