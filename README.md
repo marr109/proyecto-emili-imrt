@@ -247,8 +247,9 @@ véase `ampl_gurobi/README.md`.
 irace --scenario irace/scenario.irace
 ```
 
-La gramática `grammars/imrt_bao.xml` es un superconjunto de este espacio (pasos 1 y 20, posiciones `replace`); las diferencias están
-documentadas en `scripts/check_irace_params.py`.
+La gramática `grammars/imrt_bao.xml` es un superconjunto de este espacio: ofrece además los pasos 1 y 20, las posiciones `replace`,
+las memorias tabú `TBao_fixed` y `TBao_attr`, las perturbaciones `pgreedy` y `pgreedysample` y el catálogo sin restricción
+(`irandomk unrestricted`). `scripts/check_irace_params.py` lista esas diferencias y falla ante cualquier otra desviación.
 
 ---
 

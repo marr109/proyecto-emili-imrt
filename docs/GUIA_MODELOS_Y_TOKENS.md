@@ -446,7 +446,7 @@ equivale a grados.
 | Elemento | Ruta | Relación con los tokens |
 |---|---|---|
 | Gramática | `grammars/imrt_bao.xml` | genera solo la parte "descripción del algoritmo". El llamador antepone `instances/CERR_Prostate baoimrt 4 csv <traj>` y agrega `-it <seg> rnds <semilla>` al final. |
-| Espacio de irace | `irace/parameters.irace` | espejo escrito a mano de la gramática |
+| Espacio de irace | `irace/parameters.irace` | subconjunto de la gramática escrito a mano: lo que se ejecutó |
 | Traductor | `irace/target-runner` | arma la línea de comandos desde los parámetros, fija las variables `EMILI_*`, ejecuta `build/emili` y lee `FMO objective f*` del log. No lee el XML. |
 | Escenario | `irace/scenario.irace` | presupuesto (300 experimentos) y paralelismo |
 | Verificador | `scripts/check_irace_params.py` | compara límites, valores y dependencias de XML contra `parameters.irace` |
@@ -458,8 +458,14 @@ las dependencias de cada algoritmo, y `sample_grammar.py` produjo líneas válid
 
 Notas de la gramática:
 
+- Es un superconjunto del espacio de irace: cubre todo lo implementado y usado en los experimentos.
 - Usa `step` en {1, 5, 10, 20}, mientras que irace usa {5, 10}.
 - Expone `distinct|replace`; la corrida de irace ejecutada usó siempre `distinct`.
+- Ofrece las memorias tabú `TBao_adaptive`, `TBao_fixed` y `TBao_attr` (irace usó solo `TBao_adaptive`), las perturbaciones
+  `pgreedy` y `pgreedysample` (sin evaluación experimental) y el catálogo `irandomk unrestricted`.
+- Deja fuera a propósito: `nangswap` completo (272 vecinos no caben en el presupuesto), `nangshiftmulti`, las perturbaciones
+  heredadas `prangswap` y `prandom`, el problema `imrt` solo de FMO, la opción `stall` del tabú y `unrestricted` dentro de `pgreedysample`.
+- Validación: 150 líneas muestreadas de la gramática pasaron el analizador de EMILI sin errores (`-it 2`, solo valida sintaxis).
 - `sa_metropolis` y `saacc` requieren T_ini > T_fin; no se expresa en el XML.
 
 Ejecutores de experimentos:
