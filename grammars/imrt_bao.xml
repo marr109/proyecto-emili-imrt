@@ -7,8 +7,9 @@
     <!-- cantidad de ángulos que mueve la perturbación prangshift (1 a 3). -->
     <bao:pert_angles type="int" min="1" max="3" stepIfEnumerated="1"/>
 
-    <!-- máximo de ángulos que mueven las perturbaciones adaptativas y las de magnitud (1 a 2). -->
-    <bao:mag_angles type="int" min="1" max="2" stepIfEnumerated="1"/>
+    <!-- máximo de ángulos que mueven las perturbaciones adaptativas y las de magnitud (1 a 4 = todos los ángulos, K=4).
+         Con distinct no se pueden mover más ángulos distintos que K; con replace el conteo son movimientos y podría superar K. -->
+    <bao:mag_angles type="int" min="1" max="4" stepIfEnumerated="1"/>
 
     <!-- rondas seguidas sin mejora antes de que una perturbación adaptativa suba de nivel (1 a 6). -->
     <bao:stagnation type="int" min="1" max="6" stepIfEnumerated="1"/>
@@ -159,7 +160,8 @@
 
     <!-- Tipo de perturbación, en estos se encuentra:
 
-      Observación: Las variantes con magnitud mueven como máximo 2 ángulos.
+      Observación: las variantes adaptativas y de magnitud pueden mover hasta K=4 ángulos (la corrida de irace ya ejecutada
+      usó como máximo 2).
     -->
     <bao:perturbation>
        <!-- Desplaza n ángulos una magnitud aleatoria entre step y 2·step (nunca exactamente step). -->

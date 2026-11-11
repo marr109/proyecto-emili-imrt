@@ -35,6 +35,7 @@ TRACK = {"scan_order", "stepwise", "pert_angles", "mag_angles", "stagnation", "s
          "window_deg", "tenure_min", "tenure_max", "t_start", "t_end", "beta", "alpha"}
 ALGORITHMS = {"ls": "local_search", "ils": "ils", "sa": "sa", "vnd": "vnd", "tabu": "tabu", "vns": "vns"}
 KNOWN = {
+    "mag_angles": "the executed irace run used (1, 2); the grammar admits up to K = 4 angles (the limit of 2 was a choice, not a code limit)",
     "shake_levels": "the executed irace run used (1, 4); the grammar was later capped at K-1 = 3 "
                     "because level 4 replaces all K = 4 angles",
 }
