@@ -28,6 +28,8 @@ NUMERIC = {
 }
 # parameters whose presence defines the dependency structure (same names on both sides)
 GRAMMAR_ONLY_STEPS = {"1", "20"}
+# alternatives the grammar offers but the executed irace run never explored (skipped in the comparison)
+GRAMMAR_ONLY_PREFIXES = ("TBao_fixed", "TBao_attr", "pgreedy")
 TRACK = {"scan_order", "stepwise", "pert_angles", "mag_angles", "stagnation", "shake_levels", "sample_size",
          "window_deg", "tenure_min", "tenure_max", "t_start", "t_end", "beta", "alpha"}
 ALGORITHMS = {"ls": "local_search", "ils": "ils", "sa": "sa", "vnd": "vnd", "tabu": "tabu", "vns": "vns"}
@@ -39,6 +41,7 @@ NOTES = [
     "irace shares step, sample_size and window_deg across all neighbourhood/perturbation slots; the grammar draws them per use",
     "irace declares `step` unconditionally (it is ignored by vnd and by a VND-based vns), the grammar only where it is used",
     "the grammar also exposes `replacement` (distinct | replace) for the shift perturbations; the executed irace run always used distinct slots",
+    "the grammar also offers the tabu memories TBao_fixed and TBao_attr (irace used only TBao_adaptive), the perturbations pgreedy and pgreedysample, and the unrestricted catalog (`irandomk unrestricted`)",
     "irace forbids nb1 == nb2 and t_start <= t_end; the grammar allows repeated neighbourhoods (t_start > t_end is left to the caller)",
 ]
 
@@ -69,7 +72,9 @@ def expand(tag, D):
     if el.get("type") in ("int", "real"):
         return {frozenset([tag])} if tag in TRACK else {frozenset()}
     out = set()
-    for refs, _ in alternatives(el):
+    for refs, text in alternatives(el):
+        if text.startswith(GRAMMAR_ONLY_PREFIXES):
+            continue
         combos = {frozenset()}
         for r in refs:
             combos = {a | b for a in combos for b in expand(r, D)}
@@ -196,7 +201,10 @@ def check_categories(D, params):
         print("%-5s categories %-11s irace %s vs grammar %s" % ("OK" if ok else "DIFF", n, sorted(iv), sorted(got)))
         bad += not ok
     pert = {"prangshift": "shift", "prangshiftadaptive": "adaptive", "prangshiftmag": "mag", "prangshiftadaptivemag": "adaptivemag"}
-    got = {pert.get(t.split()[0], "?" + t.split()[0]) for t in texts(D, "perturbation")}
+    only = [t for t in texts(D, "perturbation") if t.startswith(GRAMMAR_ONLY_PREFIXES)]
+    if only:
+        print("KNOWN categories pert        grammar also admits %s, outside the executed irace space" % sorted({t.split()[0] for t in only}))
+    got = {pert.get(t.split()[0], "?" + t.split()[0]) for t in texts(D, "perturbation") if t not in only}
     ok = got == set(params["pert"]["vals"])
     print("%-5s categories %-11s irace %s vs grammar %s" % ("OK" if ok else "DIFF", "pert", sorted(params["pert"]["vals"]), sorted(got)))
     bad += not ok
