@@ -452,6 +452,10 @@ equivale a grados.
 | Verificador | `scripts/check_irace_params.py` | compara límites, valores y dependencias de XML contra `parameters.irace` |
 | Muestreo | `scripts/sample_grammar.py [n] [semilla]` | imprime n comandos de algoritmo al azar |
 
+Camino dirigido por la gramática: `scripts/grammar2code_irace.py` genera `irace/parameters_g2c.txt` desde el XML con
+`grammar2code`, y `irace/target-runner-g2c` traduce cada configuración a una línea de comandos (ver el README). Se comprobó con
+`irace --check` y con `scripts/test_g2c_pipeline.py` (120 configuraciones sorteadas, todas aceptadas por EMILI en modo de solo sintaxis).
+
 Se ejecutaron ambos scripts en esta revisión: `check_irace_params.py` informó `OK` en
 las dependencias de cada algoritmo, y `sample_grammar.py` produjo líneas válidas
 (por ejemplo `best irandomk locmin nangshift 5`).

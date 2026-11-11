@@ -251,6 +251,34 @@ La gramática `grammars/imrt_bao.xml` es un superconjunto de este espacio: ofrec
 las memorias tabú `TBao_fixed` y `TBao_attr`, las perturbaciones `pgreedy` y `pgreedysample` y el catálogo sin restricción
 (`irandomk unrestricted`). `scripts/check_irace_params.py` lista esas diferencias y falla ante cualquier otra desviación.
 
+#### Ajuste dirigido por la gramática (grammar2code)
+
+La gramática también puede alimentar a irace directamente con [grammar2code](https://github.com/federicoPagnozzi/grammar2code)
+(BSD-2; Mascia, López-Ibáñez, Dubois-Lacoste y Stützle, *Computers & Operations Research* 51, 2014), que no forma parte de este
+repositorio. `irace/parameters.irace` se mantiene como registro de la corrida ejecutada; los archivos dirigidos por la gramática son nuevos:
+
+| Archivo | Función |
+|---|---|
+| `scripts/grammar2code_irace.py` | ejecuta grammar2code sobre `grammars/imrt_bao.xml` y escribe `irace/parameters_g2c.txt` (parámetros con sus condiciones, más la regla `[forbidden]` `t_start <= t_end`, que el XML no puede expresar) |
+| `irace/target-runner-g2c` | traduce cada configuración de irace a una línea de comandos de EMILI con grammar2code, la ejecuta e imprime f* (con `G2C_DRY_RUN=1` solo imprime el comando) |
+| `irace/scenario_g2c.irace` | escenario con el mismo presupuesto que `scenario.irace` |
+| `scripts/test_g2c_pipeline.py` | sortea configuraciones, las traduce y comprueba que EMILI acepta cada comando |
+
+```bash
+git clone https://github.com/federicoPagnozzi/grammar2code.git && cd grammar2code
+git apply <este repositorio>/scripts/patches/grammar2code-boost-filesystem.patch   # dos líneas, necesarias con Boost reciente
+mkdir build && cd build && cmake .. -DCMAKE_POLICY_VERSION_MINIMUM=3.5 && make   # requiere CMake y Boost
+
+export GRAMMAR2CODE=<ruta a build/grammar2code>
+python scripts/grammar2code_irace.py          # escribe irace/parameters_g2c.txt
+python scripts/test_g2c_pipeline.py 100       # traducción y análisis de EMILI, sin resolver el FMO
+cd irace && irace --scenario scenario_g2c.irace
+```
+
+Dos reglas del formato importan al editar la gramática: grammar2code descarta los `<![CDATA[]]>` vacíos (y con ellos una alternativa
+«vacía»), por lo que las partes opcionales usan un solo espacio, como en `stepwise`; y cada uso de una regla se convierte en su propio
+parámetro, de modo que el espacio generado es mayor que el escrito a mano (122 parámetros frente a unos 35).
+
 ---
 
 ## Informe Clínico (ICRU-83)
